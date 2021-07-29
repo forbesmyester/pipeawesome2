@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use async_std::io as aio;
 use async_std::prelude::*;
 use async_std::task;
-use pipeawesome2::{buffer, motion::MotionNotifications};
+use pipeawesome2::motion::MotionNotifications;
 
 use pipeawesome2::motion::{PullConfiguration, Pull, Push, motion, MotionResult};
 use pipeawesome2::launch::Launch;
@@ -196,8 +196,9 @@ async fn do_stuff() -> MotionResult<usize> {
 fn main() {
 
     // task::block_on(test_motion_impl());
-    // println!("{:?}", task::block_on(do_stuff()));
-    println!("{:?}", task::block_on(buffer::test_buffer_impl()));
+    println!("{:?}", task::block_on(do_stuff()));
+    // use pipeawesome2::buffer;
+    // println!("{:?}", task::block_on(buffer::test_buffer_impl()));
 
 
 

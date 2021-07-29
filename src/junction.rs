@@ -1,10 +1,10 @@
 // use pipeawesome2::motion::{Pull, MotionResult, IOData};
-use async_std::{channel::Receiver, prelude::*, task};
+use async_std::prelude::*;
 
-use async_std::channel::{bounded, unbounded, Sender };
+use async_std::channel::bounded;
 use crate::motion::IOData;
 
-use super::motion::{ motion, MotionError, MotionResult, MotionNotifications, PullConfiguration, Pull, Push, };
+use super::motion::{ motion, MotionResult, MotionNotifications, PullConfiguration, Pull, Push, };
 
 pub struct Junction {
     stdout_size: usize,
@@ -86,13 +86,17 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
     let mut junction = Junction::new();
     junction.set_stdout_size(1);
     junction.add_stdin(input, 1);
-    let output = junction.add_stdout();
+    let output_1 = junction.add_stdout();
+    let output_2 = junction.add_stdout();
     let junction_motion = junction.start();
-    match junction_motion.join(read_data(output)).await {
-        (Ok(proc_count), mut v) => {
-            assert_eq!(Some(IOData::Finished), v.pop());
-            assert_eq!(Some(IOData::Data(8, [66; 255])), v.pop());
-            assert_eq!(Some(IOData::Data(8, [65; 255])), v.pop());
+    match junction_motion.join(read_data(output_1).join(read_data(output_2))).await {
+        (Ok(proc_count), (mut v1, mut v2)) => {
+            assert_eq!(Some(IOData::Finished), v1.pop());
+            assert_eq!(Some(IOData::Data(8, [66; 255])), v1.pop());
+            assert_eq!(Some(IOData::Data(8, [65; 255])), v1.pop());
+            assert_eq!(Some(IOData::Finished), v2.pop());
+            assert_eq!(Some(IOData::Data(8, [66; 255])), v2.pop());
+            assert_eq!(Some(IOData::Data(8, [65; 255])), v2.pop());
             Ok(proc_count)
         },
         _ => {

@@ -1,5 +1,5 @@
 // use pipeawesome2::motion::{Pull, MotionResult, IOData};
-use async_std::{channel::SendError, prelude::*, task};
+use async_std::{channel::SendError, prelude::*};
 
 use async_std::channel::{bounded, unbounded, Receiver, Sender };
 use crate::motion::{IOData, MotionNotifications};
@@ -187,7 +187,6 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
 
 #[test]
 fn do_stuff() {
-
     use async_std::task;
     println!("R: {:?}", task::block_on(test_buffer_impl()));
 }
