@@ -56,13 +56,12 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
     async fn read_data(mut output: Pull) -> Vec<IOData> {
         let mut v: Vec<IOData> = vec![];
         loop {
-            let x: MotionResult<IOData> = crate::motion::motion_read(&mut output).await;
+            let x: MotionResult<crate::motion::IODataWrapper> = crate::motion::motion_read(&mut output).await;
             match x {
-                Ok(IOData::Finished) => {
-                    v.push(IOData::Finished);
+                Ok(crate::motion::IODataWrapper::Finished) => {
                     return v;
                 }
-                Ok(x) => {
+                Ok(crate::motion::IODataWrapper::IOData(x)) => {
                     v.push(x)
                 }
                 _ => {
@@ -76,9 +75,8 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
         let mut vdq: VecDeque<IOData> = VecDeque::new();
         let vdq_data_0: [u8; 255] = [65; 255];
         let vdq_data_1: [u8; 255] = [66; 255];
-        vdq.push_front(IOData::Finished);
-        vdq.push_front(IOData::Data(8, vdq_data_1));
-        vdq.push_front(IOData::Data(8, vdq_data_0));
+        vdq.push_front(IOData(8, vdq_data_1));
+        vdq.push_front(IOData(8, vdq_data_0));
         vdq
     }
 
@@ -91,12 +89,10 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
     let junction_motion = junction.start();
     match junction_motion.join(read_data(output_1).join(read_data(output_2))).await {
         (Ok(proc_count), (mut v1, mut v2)) => {
-            assert_eq!(Some(IOData::Finished), v1.pop());
-            assert_eq!(Some(IOData::Data(8, [66; 255])), v1.pop());
-            assert_eq!(Some(IOData::Data(8, [65; 255])), v1.pop());
-            assert_eq!(Some(IOData::Finished), v2.pop());
-            assert_eq!(Some(IOData::Data(8, [66; 255])), v2.pop());
-            assert_eq!(Some(IOData::Data(8, [65; 255])), v2.pop());
+            assert_eq!(Some(IOData(8, [66; 255])), v1.pop());
+            assert_eq!(Some(IOData(8, [65; 255])), v1.pop());
+            assert_eq!(Some(IOData(8, [66; 255])), v2.pop());
+            assert_eq!(Some(IOData(8, [65; 255])), v2.pop());
             Ok(proc_count)
         },
         _ => {
