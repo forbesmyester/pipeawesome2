@@ -6,7 +6,7 @@ use crate::motion::{MotionError, MotionNotifications};
 
 use async_std::process as aip;
 use async_std::channel::bounded;
-use super::motion::{ motion, MotionResult, PullConfiguration, Pull, Push, };
+use super::motion::{ motion, MotionResult, Pull, Push, };
 
 // #[derive(Debug)]
 // enum LaunchOutputs {
@@ -30,7 +30,7 @@ pub struct Launch<E, P, O, A, K, V, R>
     args: Option<A>,
     stdout: Option<Push>, // Pull::IoReceiver || Pull::None
     stderr: Option<Push>, // Pull::IoReceiver || Pull::None
-    stdin: Option<PullConfiguration>,
+    stdin: Option<Pull>,
     launched: bool,
 }
 
@@ -60,8 +60,8 @@ impl <E: IntoIterator<Item = (K, V)>,
         }
     }
 
-    pub fn add_stdin(&mut self, pull: Pull, priority: u8) {
-        self.stdin = Some(PullConfiguration { priority, pull, id: 0 });
+    pub fn add_stdin(&mut self, pull: Pull) {
+        self.stdin = Some(pull);
     }
 
     pub fn add_stdout(&mut self) -> Pull {
@@ -116,12 +116,16 @@ impl <E: IntoIterator<Item = (K, V)>,
             },
             None => {
                 (
-                    vec![PullConfiguration { priority: 0, id: 0, pull: Pull::None }],
+                    vec![Pull::None],
                     std::process::Stdio::null()
                 )
             }
         };
         child_builder.stdin(child_stdin);
+        match self.stdout.is_some() {
+            true => { child_builder.stdout(async_std::process::Stdio::piped()); }
+            false => { child_builder.stdout(async_std::process::Stdio::null()); }
+        }
         let child = child_builder.spawn().unwrap();
 
         let child_stdin_push = vec![match child.stdin {
@@ -134,24 +138,29 @@ impl <E: IntoIterator<Item = (K, V)>,
 
         let (stdout_pull, stdout_push) = match (child.stdout, std::mem::take(&mut self.stdout)) {
             (Some(stdout), Some(push)) => {
-                let pull = PullConfiguration { priority: 2, id: 6, pull: Pull::CmdStdout(stdout) };
+                let pull = Pull::CmdStdout(stdout);
                 (vec![pull], vec![push])
             },
             _ => (
-                    vec![PullConfiguration { priority: 2, id: 7, pull: Pull::None }],
+                    vec![Pull::None],
                     vec![Push::None]
-                ),
+                )
         };
 
         let r2 = motion(stdout_pull, MotionNotifications::empty(), stdout_push);
 
+        match self.stderr.is_some() {
+            true => { child_builder.stderr(async_std::process::Stdio::piped()); }
+            false => { child_builder.stderr(async_std::process::Stdio::null()); }
+        }
+
         let (stderr_pull, stderr_push) = match (child.stderr, std::mem::take( &mut self.stderr)) {
             (Some(stderr), Some(push)) => {
-                let pull = PullConfiguration { priority: 2, id: 8, pull: Pull::CmdStderr(stderr) };
+                let pull = Pull::CmdStderr(stderr);
                 (vec![pull], vec![push])
             },
             _ => (
-                    vec![PullConfiguration { priority: 2, id: 9, pull: Pull::None }],
+                    vec![Pull::None],
                     vec![Push::None]
                 ),
         };

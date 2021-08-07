@@ -5,7 +5,7 @@ use async_std::channel::{bounded, unbounded, Receiver, Sender };
 use crate::motion::{IOData, MotionNotifications};
 
 use super::monitor::MonitorMessage;
-use super::motion::{ motion, MotionError, MotionResult, PullConfiguration, Pull, Push, };
+use super::motion::{ motion, MotionError, MotionResult, Pull, Push, };
 
 pub struct Buffer {
     stdout_size: usize,
@@ -39,7 +39,7 @@ impl Buffer {
         self.stdout_size = size;
     }
 
-    pub fn add_stdin(&mut self, pull: Pull, _priority: u8) {
+    pub fn add_stdin(&mut self, pull: Pull) {
         assert!(self.stdin.is_none());
         self.stdin = Some(pull);
     }
@@ -57,10 +57,10 @@ impl Buffer {
         let (monitor_i_snd, monitor_i_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
         let (monitor_o_snd, monitor_o_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
 
-        let pull_a = vec![PullConfiguration { priority: 0, id: 8, pull: std::mem::take(&mut self.stdin).unwrap() }];
+        let pull_a = vec![std::mem::take(&mut self.stdin).unwrap()];
         let push_a = vec![Push::Sender(unbounded_snd)];
 
-        let pull_b = vec![PullConfiguration { priority: 0, id: 9, pull: Pull::Receiver(unbounded_rcv) }];
+        let pull_b = vec![Pull::Receiver(unbounded_rcv)];
 
         let r_a = motion(pull_a, MotionNotifications::written(monitor_i_snd), push_a);
         let r_b = motion(pull_b, MotionNotifications::read(monitor_o_snd), vec![std::mem::take(&mut self.stdout).unwrap()]);
@@ -72,7 +72,6 @@ impl Buffer {
                 match m_in.recv().await {
                     Err(_x) => (),
                     Ok(_) => {
-                        println!("SIZEI: W");
                         changed = true;
                         size = size + 1;
                     }
@@ -85,7 +84,6 @@ impl Buffer {
                     match m_out.recv().await {
                         Err(_x) => (),
                         Ok(_) => {
-                            println!("SIZEO: R");
                             size = size - 1;
                             changed = true;
                         }
@@ -101,7 +99,6 @@ impl Buffer {
             }
         }
 
-        println!(">> {:?}", self.buffer_size_monitor);
         let r_out_prep = r_a.join(r_b).join(total_in_buffer(std::mem::take(&mut self.buffer_size_monitor), monitor_i_rcv, monitor_o_rcv)).await;
 
         fn structure_motion_result(input: ((MotionResult<usize>, MotionResult<usize>), Result<usize, SendError<usize>>)) -> MotionResult<usize> {
@@ -142,11 +139,9 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
         loop {
             match output.recv().await {
                 Ok(x) => {
-                    println!(">>> PUSH");
                     v.push(x);
                 },
                 Err(async_std::channel::RecvError) => {
-                    println!(">>> RET");
                     return v;
                 }
             }
@@ -165,13 +160,12 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
     let input = Pull::IoMock(get_input());
     let mut buffer = Buffer::new();
     buffer.set_stdout_size(1);
-    buffer.add_stdin(input, 1);
+    buffer.add_stdin(input);
     let output = buffer.add_stdout();
     let monitoring = buffer.add_buffer_size_monitor();
     let buffer_motion = buffer.start();
     match buffer_motion.join(read_data(output)).join(read_monitoring(monitoring)).await {
         ((Ok(proc_count), mut v), monitoring_msg) => {
-            println!("MONITORING_MESSAGES: {:?}", monitoring_msg);
             assert_eq!(Some(IOData(8, [66; 255])), v.pop());
             assert_eq!(Some(IOData(8, [65; 255])), v.pop());
             Ok(proc_count)

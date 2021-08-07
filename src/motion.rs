@@ -5,7 +5,6 @@ use async_std::io as aio;
 use async_std::process as aip;
 use async_std::prelude::*;
 use super::monitor::MonitorMessage;
-use super::types::InputId;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct IOData (pub usize, pub [u8; 255]);
@@ -80,18 +79,13 @@ impl From<SendError<IOData>> for MotionError {
     }
 }
 
+
 impl From<SendError<MonitorMessage>> for MotionError {
     fn from(x: SendError<MonitorMessage>) -> Self {
         MotionError::MonitorError(x)
     }
 }
 
-#[derive(Debug)]
-pub struct PullConfiguration {
-    pub priority: u8,
-    pub id: InputId,
-    pub pull: Pull,
-}
 
 pub async fn motion_read<'a>(stdin: &mut Pull) -> MotionResult<IODataWrapper> {
     let mut buf: [u8; 255] = [0; 255];
@@ -127,9 +121,9 @@ pub async fn motion_read<'a>(stdin: &mut Pull) -> MotionResult<IODataWrapper> {
     }
 }
 
-async fn motion_write(stdout: &mut Push, data: IOData) -> MotionResult<()> {
+pub async fn motion_write(stdout: &mut Push, data: IOData) -> MotionResult<()> {
     match stdout {
-        Push::None => Err(MotionError::NoneError),
+        Push::None => MotionResult::Ok(()),
         Push::IoMock(v) => MotionResult::Ok(v.push_back(data)),
         Push::Sender(wr) => Ok(wr.send(data).await?),
         Push::IoSender(wr) => Ok(wr.send(data).await?),
@@ -140,9 +134,9 @@ async fn motion_write(stdout: &mut Push, data: IOData) -> MotionResult<()> {
 }
 
 
-async fn motion_close(stdout: &mut Push) -> MotionResult<()> {
+pub async fn motion_close(stdout: &mut Push) -> MotionResult<()> {
     match stdout {
-        Push::None => Err(MotionError::NoneError),
+        Push::None => MotionResult::Ok(()),
         Push::IoMock(_v) => MotionResult::Ok(()),
         Push::Sender(wr) => { wr.close(); Ok(()) },
         Push::IoSender(wr) => { wr.close(); Ok(()) },
@@ -173,15 +167,59 @@ impl MotionNotifications {
     }
 }
 
-pub async fn motion(mut pull_configs: Vec<PullConfiguration>, monitor: MotionNotifications, mut pushs: Vec<Push>) -> MotionResult<usize> {
-    println!("MOTION: {:?}", &pull_configs);
+pub async fn motion_one(pulls: &mut Vec<Pull>, monitor: &mut MotionNotifications, pushs: &mut Vec<Push>) -> MotionResult<Vec<usize>> {
+    let mut finished_pulls = vec![];
+    for (pull_config_index, pull_config) in pulls.into_iter().enumerate() {
+        if finished_pulls.contains(&pull_config_index) { continue; }
+        let data = motion_read(pull_config).await?;
+        if data == IODataWrapper::Finished {
+            finished_pulls.push(pull_config_index);
+            continue;
+        }
+        match &monitor.read {
+            Some(m) => {
+                m.send(MonitorMessage::Index(pull_config_index)).await
+            }
+            None => Ok(())
+        }?;
+        let was_finished = data == IODataWrapper::Finished;
+        match pushs.len() == 1 {
+            true => {
+                match data {
+                    IODataWrapper::Finished => motion_close(&mut pushs[0]).await,
+                    IODataWrapper::IOData(iodata) => motion_write(&mut pushs[0], iodata).await,
+                }?;
+                // motion_write(&mut pushs[0], data).await?;
+                match (was_finished, &monitor.written) {
+                    (false, Some(m)) => m.send(MonitorMessage::Index(0)).await,
+                    _ => Ok(())
+                }?;
+                was_finished
+            },
+            false => {
+                for (index, push) in pushs.iter_mut().enumerate() {
+                    match data.clone() {
+                        IODataWrapper::Finished => motion_close(push).await,
+                        IODataWrapper::IOData(iodata) => motion_write(push, iodata).await,
+                    }?;
+                    match (was_finished, &monitor.written) {
+                        (false, Some(m)) => m.send(MonitorMessage::Index(index)).await,
+                        _ => Ok(())
+                    }?;
+                }
+                was_finished
+            }
+        };
+    }
+    MotionResult::Ok(finished_pulls)
+}
+
+
+pub async fn motion(mut pulls: Vec<Pull>, mut monitor: MotionNotifications, mut pushs: Vec<Push>) -> MotionResult<usize> {
     let mut read_count = 0;
-    let mut found_priority: Option<u8> = None;
-    let mut finished_pulls: std::collections::HashSet<usize> = std::collections::HashSet::new();
 
     loop {
-        if finished_pulls.len() == pull_configs.len() {
-            // println!("FINISHED: {:?} {:?} {}/{}", &pull_configs, &finished_pulls, &finished_pulls.len(), &pull_configs.len());
+        if pulls.len() == 0 {
             for push in pushs.iter_mut() {
                 motion_close(push).await?;
             }
@@ -189,57 +227,12 @@ pub async fn motion(mut pull_configs: Vec<PullConfiguration>, monitor: MotionNot
             monitor.written.map(|m| m.close());
             return MotionResult::Ok(read_count);
         }
-        for (pull_config_index, pull_config) in pull_configs.iter_mut().enumerate() {
-            if finished_pulls.contains(&pull_config_index) { continue; }
-            if found_priority.map_or(false, |n| n < pull_config.priority) { continue; }
-            let data = motion_read(&mut pull_config.pull).await?;
-            if data == IODataWrapper::Finished {
-                println!("FINISHED: {:?}", &pull_config);
-                finished_pulls.insert(pull_config_index);
-                continue;
-            }
-            match &monitor.read {
-                Some(m) => {
-                    // println!("R: {:?}", &data);
-                    m.send(MonitorMessage::Index(pull_config_index)).await
-                }
-                None => Ok(())
-            }?;
-            found_priority = Some(pull_config.priority);
-            read_count += 1;
-            let was_finished = data == IODataWrapper::Finished;
-            match pushs.len() == 1 {
-                true => {
-                    // println!("QDATA({}): {:?}", pull_config.id, &data);
-                    // println!("W: {:?}", &data);
-                    match data {
-                        IODataWrapper::Finished => motion_close(&mut pushs[0]).await,
-                        IODataWrapper::IOData(iodata) => motion_write(&mut pushs[0], iodata).await,
-                    }?;
-                    // motion_write(&mut pushs[0], data).await?;
-                    match (was_finished, &monitor.written) {
-                        (false, Some(m)) => m.send(MonitorMessage::Index(0)).await,
-                        _ => Ok(())
-                    }?;
-                    was_finished
-                },
-                false => {
-                    for (index, push) in pushs.iter_mut().enumerate() {
-                        // println!("DATA({}): {:?}", pull_config.id, &data);
-                        // println!("W: {:?}", &data);
-                        // motion_write(push, data.clone()).await?;
-                        match data.clone() {
-                            IODataWrapper::Finished => motion_close(push).await,
-                            IODataWrapper::IOData(iodata) => motion_write(push, iodata).await,
-                        }?;
-                        match (was_finished, &monitor.written) {
-                            (false, Some(m)) => m.send(MonitorMessage::Index(index)).await,
-                            _ => Ok(())
-                        }?;
-                    }
-                    was_finished
-                }
-            };
+
+        let finished_pulls = motion_one(&mut pulls, &mut monitor, &mut pushs).await?;
+        read_count += 1;
+
+        for i in finished_pulls.into_iter().rev() {
+            pulls.remove(i);
         }
     }
 
@@ -249,7 +242,6 @@ pub async fn motion(mut pull_configs: Vec<PullConfiguration>, monitor: MotionNot
 #[test]
 fn test_motion() {
 
-    use async_std::task;
     use async_std::channel::{ bounded, unbounded };
 
     async fn test_motion_impl() -> ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>) {
@@ -268,9 +260,8 @@ fn test_motion() {
         source.push_back(IOData(1, [1; 255]));
         source.push_back(IOData(1, [2; 255]));
         let (s_snd0, s_rcv0) = bounded(1);
-        let pull_config_1 = vec![PullConfiguration { priority: 1, id: 0, pull: Pull::IoMock(source) } ];
+        let pull_config_1 = vec![Pull::IoMock(source)];
         let push_config_1 = vec![Push::IoSender(s_snd0)];
-        println!("## READ");
 
         let motion1 = motion(
             pull_config_1,
@@ -278,10 +269,9 @@ fn test_motion() {
             push_config_1
         );
 
-        println!("## SPLIT");
         // let (sndi1, rcvi1) = bounded(1);
         let pull_config_splitter = vec![
-            PullConfiguration { priority: 1, id: 1, pull: Pull::IoReceiver(s_rcv0) },
+            Pull::IoReceiver(s_rcv0),
         ];
         let (snd1, rcv1) = unbounded();
         let (snd2, rcv2) = unbounded();
@@ -292,10 +282,9 @@ fn test_motion() {
             push_config_splitter
         );
 
-        println!("## JOIN");
         let joiner_pull_configs = vec![
-            PullConfiguration { priority: 1, id: 2, pull: Pull::Receiver(rcv1) },
-            PullConfiguration { priority: 1, id: 3, pull: Pull::Receiver(rcv2) },
+            Pull::Receiver(rcv1),
+            Pull::Receiver(rcv2),
         ];
         let (mock_stdout_push_2, mock_stdout_pull_2)  = bounded(8);
         let motion3 = motion(
@@ -379,7 +368,7 @@ fn test_motion() {
         f
     }
 
+    println!("R: {:?}", async_std::task::block_on(test_motion_impl()));
 
-    println!("R: {:?}", task::block_on(test_motion_impl()));
     // assert_eq!(1, 0);
 }

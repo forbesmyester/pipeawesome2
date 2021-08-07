@@ -4,13 +4,13 @@ use async_std::prelude::*;
 use async_std::channel::bounded;
 use crate::motion::IOData;
 
-use super::motion::{ motion, MotionResult, MotionNotifications, PullConfiguration, Pull, Push, };
+use super::motion::{ motion, MotionResult, MotionNotifications, Pull, Push, };
 
 pub struct Junction {
     stdout_size: usize,
     started: bool,
     stdout: Vec<Push>,
-    stdin: Vec<PullConfiguration>,
+    stdin: Vec<Pull>,
 }
 
 /**
@@ -32,10 +32,9 @@ impl Junction {
         self.stdout_size = size;
     }
 
-    pub fn add_stdin(&mut self, pull: Pull, priority: u8) {
+    pub fn add_stdin(&mut self, pull: Pull) {
         assert!(!self.started);
-        let id = self.stdin.len() + self.stdout.len();
-        self.stdin.push(PullConfiguration { priority, id, pull });
+        self.stdin.push(pull);
     }
 
     pub fn add_stdout(&mut self) -> Pull {
@@ -46,6 +45,7 @@ impl Junction {
     }
 
     pub async fn start(&mut self) -> MotionResult<usize> {
+        self.started = true;
         motion(std::mem::take(&mut self.stdin), MotionNotifications::empty(), std::mem::take(&mut self.stdout)).await
     }
 }
@@ -83,7 +83,7 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
     let input = Pull::IoMock(get_input());
     let mut junction = Junction::new();
     junction.set_stdout_size(1);
-    junction.add_stdin(input, 1);
+    junction.add_stdin(input);
     let output_1 = junction.add_stdout();
     let output_2 = junction.add_stdout();
     let junction_motion = junction.start();
