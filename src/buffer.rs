@@ -4,21 +4,23 @@ use async_std::{channel::SendError, prelude::*};
 use async_std::channel::{bounded, unbounded, Receiver, Sender };
 use crate::motion::{IOData, MotionNotifications};
 
-use super::monitor::MonitorMessage;
-use super::motion::{ motion, MotionError, MotionResult, Pull, Push, };
+use super::motion::{ motion, MotionError, MonitorMessage, MotionResult, Pull, Push, };
+use crate::back_off::BackOff;
+
+use crate::startable_control::StartableControl;
+use async_trait::async_trait;
+
+#[derive(PartialEq,Debug)]
+pub struct BufferSizeMessage(pub usize);
 
 pub struct Buffer {
     stdout_size: usize,
     stdout: Option<Push>,
     stdin: Option<Pull>,
-    buffer_size_monitor: Option<Sender<usize>>,
+    buffer_size_monitor: Option<Sender<BufferSizeMessage>>,
 }
 
-/**
- * Buffer
- *
- * STDIN -> UnboundedChannelSender -> UnboundedChannelReciever -> STDOUT
- */
+#[allow(clippy::new_without_default)]
 impl Buffer {
     pub fn new() -> Buffer {
         Buffer {
@@ -29,7 +31,8 @@ impl Buffer {
         }
     }
 
-    pub fn add_buffer_size_monitor(&mut self) -> Receiver<usize> {
+    pub fn add_buffer_size_monitor(&mut self) -> Receiver<BufferSizeMessage> {
+        assert!(self.buffer_size_monitor.is_none(), "Each buffer can only be monitored once");
         let (tx, rx) = bounded(self.stdout_size);
         self.buffer_size_monitor = Some(tx);
         rx
@@ -48,67 +51,101 @@ impl Buffer {
         assert!(self.stdout.is_none());
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
         self.stdout = Some(Push::IoSender(child_stdout_push_channel));
-        Pull::IoReceiver(stdout_io_reciever_channel)
+        Pull::Receiver(stdout_io_reciever_channel)
     }
 
-    pub async fn start(&mut self) -> MotionResult<usize> {
+}
+
+#[async_trait]
+impl StartableControl for Buffer {
+    async fn start(&mut self) -> MotionResult<usize> {
 
         let (unbounded_snd, unbounded_rcv) = unbounded();
         let (monitor_i_snd, monitor_i_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
         let (monitor_o_snd, monitor_o_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
 
-        let pull_a = vec![std::mem::take(&mut self.stdin).unwrap()];
         let push_a = vec![Push::Sender(unbounded_snd)];
-
         let pull_b = vec![Pull::Receiver(unbounded_rcv)];
 
-        let r_a = motion(pull_a, MotionNotifications::written(monitor_i_snd), push_a);
-        let r_b = motion(pull_b, MotionNotifications::read(monitor_o_snd), vec![std::mem::take(&mut self.stdout).unwrap()]);
+        let r_a = motion(
+            vec![std::mem::take(&mut self.stdin).unwrap()],
+            MotionNotifications::written(monitor_i_snd),
+            push_a
+        );
+        let r_b = motion(
+            pull_b,
+            MotionNotifications::read(monitor_o_snd),
+            vec![std::mem::take(&mut self.stdout).unwrap()]
+        );
 
-        async fn total_in_buffer(sender: Option<Sender<usize>>, m_in: Receiver<MonitorMessage>, m_out: Receiver<MonitorMessage>) -> Result<usize, SendError<usize>> {
+        async fn total_in_buffer(sender: Option<Sender<BufferSizeMessage>>, m_in: Receiver<MonitorMessage>, m_out: Receiver<MonitorMessage>) -> Result<usize, SendError<BufferSizeMessage>> {
             let mut size: usize = 0;
+            let mut back_off = BackOff::new();
+            let mut last = 0;
             loop {
-                let mut changed = false;
-                match m_in.recv().await {
-                    Err(_x) => (),
-                    Ok(_) => {
-                        changed = true;
-                        size = size + 1;
+                let mut buffer_movement = false;
+                match m_in.try_recv() {
+                    Err(async_std::channel::TryRecvError::Empty) => {
+                    },
+                    Err(async_std::channel::TryRecvError::Closed) => (),
+                    Ok(MonitorMessage::Wrote(_)) => {
+                        // println!("+BUF");
+                        buffer_movement = true;
+                        size += 1;
+                    }
+                    Ok(MonitorMessage::Read(_)) => {
+                        panic!("SHOULD NOT BE HERE");
                     }
                 }
-                match &sender {
-                    Some(s) => { s.send(size).await?; },
-                    None => ()
-                };
-                if size > 0 {
-                    match m_out.recv().await {
-                        Err(_x) => (),
-                        Ok(_) => {
-                            size = size - 1;
-                            changed = true;
-                        }
+                match m_out.try_recv() {
+                    Err(async_std::channel::TryRecvError::Empty) => {
+                    },
+                    Err(async_std::channel::TryRecvError::Closed) => (),
+                    Ok(MonitorMessage::Read(_)) => {
+                        // println!("-BUF");
+                        buffer_movement = true;
+                        size -= 1;
+                    }
+                    Ok(MonitorMessage::Wrote(_)) => {
+                        panic!("SHOULD NOT BE HERE");
                     }
                 }
-                match (changed, &sender) {
-                    (true, Some(s)) => s.send(size).await,
+                match (last != size, &sender) {
+                    (true, Some(s)) => {
+                        last = size;
+                        s.send(BufferSizeMessage(size)).await
+                    },
                     _ => Ok(()),
                 }?;
-                if m_in.is_closed() && m_out.is_closed() {
-                    return Ok(size);
+                if m_in.is_empty() && m_in.is_closed() && m_out.is_empty() && m_out.is_closed() {
+                    return Ok(size as usize);
                 }
+                match buffer_movement {
+                    false => {
+                        back_off.wait().await;
+                    },
+                    true => {
+                        back_off.reset();
+                    },
+                };
             }
         }
 
-        let r_out_prep = r_a.join(r_b).join(total_in_buffer(std::mem::take(&mut self.buffer_size_monitor), monitor_i_rcv, monitor_o_rcv)).await;
+        let r_out_prep = r_a.join(r_b).join(
+            total_in_buffer(std::mem::take(&mut self.buffer_size_monitor), monitor_i_rcv, monitor_o_rcv)
+        ).await;
 
-        fn structure_motion_result(input: ((MotionResult<usize>, MotionResult<usize>), Result<usize, SendError<usize>>)) -> MotionResult<usize> {
+        fn structure_motion_result(input: ((MotionResult<usize>, MotionResult<usize>), Result<usize, SendError<BufferSizeMessage>>)) -> MotionResult<usize> {
             match input {
                 ((MotionResult::Ok(stdin_count), MotionResult::Ok(_)), _x) => Ok(stdin_count),
                 _ => Err(MotionError::NoneError),
             }
         }
 
-        structure_motion_result(r_out_prep)
+        match structure_motion_result(r_out_prep) {
+            Ok(x) => Ok(x),
+            Err(x) => Err(x)
+        }
 
     }
 }
@@ -118,8 +155,9 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
 
     async fn read_data(mut output: Pull) -> Vec<IOData> {
         let mut v: Vec<IOData> = vec![];
+        async_std::task::sleep(std::time::Duration::from_millis(100)).await;
         loop {
-            let x: MotionResult<crate::motion::IODataWrapper> = crate::motion::motion_read(&mut output).await;
+            let x: MotionResult<crate::motion::IODataWrapper> = crate::motion::motion_read(&mut output, false).await;
             match x {
                 Ok(crate::motion::IODataWrapper::Finished) => {
                     return v;
@@ -152,12 +190,16 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
         let mut vdq: VecDeque<IOData> = VecDeque::new();
         let vdq_data_0: [u8; 255] = [65; 255];
         let vdq_data_1: [u8; 255] = [66; 255];
+        let vdq_data_2: [u8; 255] = [67; 255];
+        let vdq_data_3: [u8; 255] = [68; 255];
+        vdq.push_front(IOData(8, vdq_data_3));
+        vdq.push_front(IOData(8, vdq_data_2));
         vdq.push_front(IOData(8, vdq_data_1));
         vdq.push_front(IOData(8, vdq_data_0));
         vdq
     }
 
-    let input = Pull::IoMock(get_input());
+    let input = Pull::Mock(get_input());
     let mut buffer = Buffer::new();
     buffer.set_stdout_size(1);
     buffer.add_stdin(input);
@@ -165,9 +207,25 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
     let monitoring = buffer.add_buffer_size_monitor();
     let buffer_motion = buffer.start();
     match buffer_motion.join(read_data(output)).join(read_monitoring(monitoring)).await {
-        ((Ok(proc_count), mut v), monitoring_msg) => {
-            assert_eq!(Some(IOData(8, [66; 255])), v.pop());
-            assert_eq!(Some(IOData(8, [65; 255])), v.pop());
+        ((Ok(proc_count), v), monitoring_msg) => {
+            assert_eq!(
+                vec![
+                    IOData(8, [65; 255]),
+                    IOData(8, [66; 255]),
+                    IOData(8, [67; 255]),
+                    IOData(8, [68; 255]),
+                ],
+                v
+            );
+
+            assert_eq!(
+                monitoring_msg, vec![
+                    BufferSizeMessage(1),
+                    BufferSizeMessage(2),
+                    BufferSizeMessage(1),
+                    BufferSizeMessage(0),
+                ]);
+
             Ok(proc_count)
         },
         _ => {

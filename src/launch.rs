@@ -1,19 +1,12 @@
 // use pipeawesome2::motion::{Pull, MotionResult, IOData};
 use std::ffi::OsStr;
-use async_std::prelude::*;
+use async_std::{channel::Sender, prelude::*};
 use std::path::Path;
-use crate::motion::{MotionError, MotionNotifications};
+use crate::motion::{IOData, MotionError, MotionNotifications};
 
 use async_std::process as aip;
 use async_std::channel::bounded;
 use super::motion::{ motion, MotionResult, Pull, Push, };
-
-// #[derive(Debug)]
-// enum LaunchOutputs {
-//     STDOUT,
-//     STDERR,
-//     STDOUT_AND_STDERR,
-// }
 
 pub struct Launch<E, P, O, A, K, V, R>
     where E: IntoIterator<Item = (K, V)>,
@@ -28,12 +21,14 @@ pub struct Launch<E, P, O, A, K, V, R>
     path: Option<P>,
     env: Option<E>,
     args: Option<A>,
-    stdout: Option<Push>, // Pull::IoReceiver || Pull::None
-    stderr: Option<Push>, // Pull::IoReceiver || Pull::None
+    stdout: Option<Push>,
+    stderr: Option<Push>,
+    exit_status: Option<Sender<IOData>>,
     stdin: Option<Pull>,
     launched: bool,
 }
 
+#[allow(clippy::new_without_default)]
 impl <E: IntoIterator<Item = (K, V)>,
           P: AsRef<Path>,
           O: AsRef<OsStr>,
@@ -52,6 +47,7 @@ impl <E: IntoIterator<Item = (K, V)>,
             stdin: None,
             stdout: None,
             stderr: None,
+            exit_status: None,
             command,
             launched: false,
             path,
@@ -66,16 +62,23 @@ impl <E: IntoIterator<Item = (K, V)>,
 
     pub fn add_stdout(&mut self) -> Pull {
         assert!(self.stdout.is_none());
-        let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(1);
+        let (child_stdout_push_channel, chan_rx) = bounded(1);
         self.stdout = Some(Push::IoSender(child_stdout_push_channel));
-        Pull::IoReceiver(stdout_io_reciever_channel)
+        Pull::Receiver(chan_rx)
     }
 
     pub fn add_stderr(&mut self) -> Pull {
-        assert!(self.stdout.is_none());
-        let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(1);
+        assert!(self.stderr.is_none());
+        let (child_stdout_push_channel, chan_rx) = bounded(1);
         self.stderr = Some(Push::IoSender(child_stdout_push_channel));
-        Pull::IoReceiver(stdout_io_reciever_channel)
+        Pull::Receiver(chan_rx)
+    }
+
+    pub fn add_exit_status(&mut self) -> Pull {
+        assert!(self.exit_status.is_none());
+        let (child_exit_status_push_channel, chan_rx) = bounded(1);
+        self.exit_status = Some(child_exit_status_push_channel);
+        Pull::Receiver(chan_rx)
     }
 
     fn environment_configure(&mut self, child_builder: &mut aip::Command) {
@@ -96,15 +99,14 @@ impl <E: IntoIterator<Item = (K, V)>,
             None => { child_builder.envs(std::env::vars_os()); }
         }
 
-        match std::mem::take(&mut self.args) {
-            Some(args) => { child_builder.args(args); },
-            None => ()
-        };
+        if let Some(args) = std::mem::take(&mut self.args) {
+            child_builder.args(args);
+        }
     }
 
     pub async fn start(&mut self) -> MotionResult<usize> {
 
-        assert!(self.launched == false);
+        assert!(!self.launched);
 
         let mut child_builder = aip::Command::new(&self.command);
 
@@ -126,17 +128,17 @@ impl <E: IntoIterator<Item = (K, V)>,
             true => { child_builder.stdout(async_std::process::Stdio::piped()); }
             false => { child_builder.stdout(async_std::process::Stdio::null()); }
         }
-        let child = child_builder.spawn().unwrap();
 
-        let child_stdin_push = vec![match child.stdin {
+        let mut child = child_builder.spawn().unwrap();
+
+        let child_stdin_push = vec![match std::mem::take(&mut child.stdin) {
             Some(stdin) => Push::CmdStdin(stdin),
             None => Push::None,
         }];
 
-        // let mut io_sender = [];
         let r1 = motion(child_stdin_pull, MotionNotifications::empty(), child_stdin_push);
 
-        let (stdout_pull, stdout_push) = match (child.stdout, std::mem::take(&mut self.stdout)) {
+        let (stdout_pull, stdout_push) = match (std::mem::take(&mut child.stdout), std::mem::take(&mut self.stdout)) {
             (Some(stdout), Some(push)) => {
                 let pull = Pull::CmdStdout(stdout);
                 (vec![pull], vec![push])
@@ -154,7 +156,7 @@ impl <E: IntoIterator<Item = (K, V)>,
             false => { child_builder.stderr(async_std::process::Stdio::null()); }
         }
 
-        let (stderr_pull, stderr_push) = match (child.stderr, std::mem::take( &mut self.stderr)) {
+        let (stderr_pull, stderr_push) = match (std::mem::take(&mut child.stderr), std::mem::take( &mut self.stderr)) {
             (Some(stderr), Some(push)) => {
                 let pull = Pull::CmdStderr(stderr);
                 (vec![pull], vec![push])
@@ -168,6 +170,36 @@ impl <E: IntoIterator<Item = (K, V)>,
         let r3 = motion(stderr_pull, MotionNotifications::empty(), stderr_push);
 
         let r_out_prep: ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>) = r1.join(r2).join(r3).await;
+        if let Some(exit_status_tx) = &mut self.exit_status {
+            loop {
+                let msg = match child.try_status().ok().flatten().map(|es| es.code()) {
+                    Some(Some(exit_status)) => {
+                        let str = format!("{:?}", exit_status);
+                        let mut d = [0; 255];
+                        let bytes = str.as_bytes();
+                        for (i, b) in bytes.iter().enumerate() {
+                            if i < 255 {
+                                d[i] = *b;
+                            }
+                        }
+                        Some(IOData(bytes.len(), d))
+                    },
+                    Some(None) => {
+                        let d = [0; 255];
+                        Some(IOData(0, d))
+                    }
+                    None => None
+                };
+                match msg {
+                    Some(m) => {
+                        exit_status_tx.send(m).await?;
+                        exit_status_tx.close();
+                        break;
+                    },
+                    None => { async_std::task::sleep(std::time::Duration::from_millis(100)).await; }
+                }
+            }
+        }
 
         fn structure_motion_result(input: ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>)) -> MotionResult<usize> {
             match input {

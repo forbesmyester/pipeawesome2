@@ -8,6 +8,7 @@ BEGIN {
 }
 {
     if ((NR % mod) == rem) {
-        print $0
+        print $0;
+        fflush();
     }
 }

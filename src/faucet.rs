@@ -1,5 +1,7 @@
 use async_std::channel::{SendError, Receiver, bounded};
 use super::motion::{ MotionResult, MotionNotifications, Pull, Push, motion_close };
+use crate::startable_control::StartableControl;
+use async_trait::async_trait;
 
 pub struct Faucet {
     started: bool,
@@ -28,52 +30,15 @@ impl Faucet {
 
 
     pub fn add_stdout(&mut self) -> Pull {
-        assert!(self.started == false);
-        assert!(self.stdout.len() == 0);
+        assert!(!self.started);
+        assert!(self.stdout.is_empty());
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
         self.stdout.push(Push::IoSender(child_stdout_push_channel));
-        Pull::IoReceiver(stdout_io_reciever_channel)
-    }
-
-
-    pub async fn start(&mut self) -> MotionResult<usize> {
-        assert!(self.started == false);
-        self.started = true;
-        let mut read_count = 0;
-
-        let mut notifications = MotionNotifications::empty();
-
-        async fn control(opt_rec: &mut Option<Receiver<()>>) -> () {
-            if let Some(rec) = opt_rec {
-                match rec.try_recv() {
-                    Ok(_) => { let _x = rec.recv().await; }
-                    _ => (),
-                }
-            }
-            ()
-        }
-
-        loop {
-            let r = crate::motion::motion_one(
-                &mut self.stdin,
-                &mut notifications,
-                &mut self.stdout
-            ).await?;
-            read_count = read_count + 1;
-            if r.len() > 0 {
-                for push in &mut self.stdout {
-                    motion_close(push).await?
-                }
-                return MotionResult::Ok(read_count);
-            }
-
-            control(&mut self.control).await;
-        }
-
+        Pull::Receiver(stdout_io_reciever_channel)
     }
 
     pub fn get_control(&mut self) -> FaucetControl {
-
+        assert!(self.control.is_none(), "Each faucet can only have one control");
         let (send, recv) = bounded(1);
         self.control = Some(recv);
         FaucetControl {
@@ -82,6 +47,48 @@ impl Faucet {
         }
     }
 
+}
+
+#[async_trait]
+impl StartableControl for Faucet {
+
+    async fn start(&mut self) -> MotionResult<usize> {
+        assert!(!self.started);
+        self.started = true;
+        let mut read_count = 0;
+
+        let mut notifications = MotionNotifications::empty();
+
+        async fn control(opt_rec: &mut Option<Receiver<()>>) {
+            if let Some(rec) = opt_rec {
+                if rec.try_recv().is_ok() {
+                    let _x = rec.recv().await;
+                }
+            }
+        }
+
+        loop {
+            let r = crate::motion::motion_one(
+                &mut self.stdin,
+                &mut notifications,
+                &mut self.stdout,
+                false,
+            ).await?.finished_pulls;
+            read_count += 1;
+            if !r.is_empty() {
+                for push in &mut self.stdout {
+                    motion_close(push).await?
+                }
+                if let Some(c) = &self.control {
+                    c.close();
+                }
+                return MotionResult::Ok(read_count);
+            }
+
+            control(&mut self.control).await;
+        }
+
+    }
 
 }
 
@@ -94,16 +101,16 @@ pub struct FaucetControl {
 impl FaucetControl {
 
     pub async fn pause(&mut self) -> Result<bool, SendError<()>> {
-        if self.paused == true { return Ok(false); }
+        if self.paused { return Ok(false); }
         self.paused = true;
-        self.control.send(()).await.map(|_x| true)
+        self.control.send(()).await.map(|_x| true).or(Ok(false))
     }
 
 
     pub async fn resume(&mut self) -> Result<bool, SendError<()>> {
-        if self.paused == false { return Ok(false); }
+        if !self.paused { return Ok(false); }
         self.paused = false;
-        self.control.send(()).await.map(|_x| true)
+        self.control.send(()).await.map(|_x| true).or(Ok(false))
     }
 
 
@@ -122,7 +129,7 @@ fn do_stuff() {
 
         async fn read_data_item(output: &mut Pull) -> Result<(IOData, Instant), RecvError> {
             match output {
-                Pull::IoReceiver(rcv) => {
+                Pull::Receiver(rcv) => {
                     rcv.recv().await.map(|x| (x, Instant::now()))
                 },
                 _ => Err(RecvError),

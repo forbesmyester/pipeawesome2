@@ -1,5 +1,9 @@
 use super::motion::{ MotionResult, MotionNotifications, Pull, Push, motion };
 
+use crate::{startable_control::StartableControl};
+use async_trait::async_trait;
+
+#[allow(clippy::new_without_default)]
 pub struct Drain {
     started: bool,
     stdin: Vec<Pull>,
@@ -18,11 +22,14 @@ impl Drain {
 
     pub fn add_stdin(&mut self, pull: Pull) {
         assert!(!self.started);
-        assert!(self.stdin.len() == 0);
+        assert!(self.stdin.is_empty());
         self.stdin.push(pull);
     }
+}
 
-    pub async fn start(&mut self) -> MotionResult<usize> {
+#[async_trait]
+impl StartableControl for Drain {
+    async fn start(&mut self) -> MotionResult<usize> {
         self.started = true;
         motion(std::mem::take(&mut self.stdin), MotionNotifications::empty(), std::mem::take(&mut self.stdout)).await
     }
