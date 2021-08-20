@@ -116,7 +116,7 @@ impl StartableControl for Junction {
 pub async fn test_junction_impl() -> MotionResult<usize>  {
 
     async fn read_data(mut output: &mut Pull) -> Vec<IOData> {
-        let mut v: Vec<IOData> = vec![];
+        let mut v = vec![];
         loop {
             let x: MotionResult<crate::motion::IODataWrapper> = crate::motion::motion_read(&mut output, true).await;
             match x {
@@ -134,11 +134,11 @@ pub async fn test_junction_impl() -> MotionResult<usize>  {
     let (chan_0_1_snd, chan_0_1_rcv) = bounded(256);
     let (chan_1_0_snd, chan_1_0_rcv) = bounded(256);
 
-    chan_0_0_snd.send(IOData(8, [65; 255])).await.unwrap();
-    chan_0_0_snd.send(IOData(8, [66; 255])).await.unwrap();
-    chan_0_1_snd.send(IOData(8, [70; 255])).await.unwrap();
-    chan_0_1_snd.send(IOData(8, [71; 255])).await.unwrap();
-    chan_1_0_snd.send(IOData(8, [75; 255])).await.unwrap();
+    chan_0_0_snd.send(IOData(vec![65; 8])).await.unwrap();
+    chan_0_0_snd.send(IOData(vec![66; 8])).await.unwrap();
+    chan_0_1_snd.send(IOData(vec![70; 8])).await.unwrap();
+    chan_0_1_snd.send(IOData(vec![71; 8])).await.unwrap();
+    chan_1_0_snd.send(IOData(vec![75; 8])).await.unwrap();
 
     // chan_0_0_snd.close();
     // chan_0_1_snd.close();
@@ -169,8 +169,8 @@ pub async fn test_junction_impl() -> MotionResult<usize>  {
     assert_eq!(
         output_1_result_0,
         vec![
-            IOData(8, [65; 255]),
-            IOData(8, [70; 255]),
+            IOData(vec![65; 8]),
+            IOData(vec![70; 8]),
         ]
     );
 
@@ -183,8 +183,8 @@ pub async fn test_junction_impl() -> MotionResult<usize>  {
     assert_eq!(
         output_1_result_1,
         vec![
-            IOData(8, [66; 255]),
-            IOData(8, [71; 255]),
+            IOData(vec![66; 8]),
+            IOData(vec![71; 8]),
         ]
     );
 
@@ -196,10 +196,10 @@ pub async fn test_junction_impl() -> MotionResult<usize>  {
     assert_eq!(output_1_result_2, read_data(&mut output_2).await);
     assert_eq!(
         output_1_result_2,
-        vec![IOData(8, [75; 255])]
+        vec![IOData(vec![75; 8])],
     );
 
-    chan_0_0_snd.send(IOData(8, [67; 255])).await.unwrap();
+    chan_0_0_snd.send(IOData(vec![67; 8])).await.unwrap();
     chan_0_0_snd.close();
 
     assert_eq!(
@@ -210,7 +210,7 @@ pub async fn test_junction_impl() -> MotionResult<usize>  {
     assert_eq!(output_1_result_2, read_data(&mut output_2).await);
     assert_eq!(
         output_1_result_2,
-        vec![IOData(8, [67; 255])]
+        vec![IOData(vec![67; 8])],
     );
 
     assert_eq!(

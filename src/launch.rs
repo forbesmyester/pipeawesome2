@@ -2,7 +2,7 @@
 use std::ffi::OsStr;
 use async_std::{channel::Sender, prelude::*};
 use std::path::Path;
-use crate::motion::{IOData, MotionError, MotionNotifications};
+use crate::motion::{IOData, MotionError, MotionNotifications, ReadSplitControl};
 
 use async_std::process as aip;
 use async_std::channel::bounded;
@@ -140,7 +140,7 @@ impl <E: IntoIterator<Item = (K, V)>,
 
         let (stdout_pull, stdout_push) = match (std::mem::take(&mut child.stdout), std::mem::take(&mut self.stdout)) {
             (Some(stdout), Some(push)) => {
-                let pull = Pull::CmdStdout(stdout);
+                let pull = Pull::CmdStdout(stdout, ReadSplitControl::new());
                 (vec![pull], vec![push])
             },
             _ => (
@@ -158,7 +158,7 @@ impl <E: IntoIterator<Item = (K, V)>,
 
         let (stderr_pull, stderr_push) = match (std::mem::take(&mut child.stderr), std::mem::take( &mut self.stderr)) {
             (Some(stderr), Some(push)) => {
-                let pull = Pull::CmdStderr(stderr);
+                let pull = Pull::CmdStderr(stderr, ReadSplitControl::new());
                 (vec![pull], vec![push])
             },
             _ => (
@@ -175,18 +175,11 @@ impl <E: IntoIterator<Item = (K, V)>,
                 let msg = match child.try_status().ok().flatten().map(|es| es.code()) {
                     Some(Some(exit_status)) => {
                         let str = format!("{:?}", exit_status);
-                        let mut d = [0; 255];
                         let bytes = str.as_bytes();
-                        for (i, b) in bytes.iter().enumerate() {
-                            if i < 255 {
-                                d[i] = *b;
-                            }
-                        }
-                        Some(IOData(bytes.len(), d))
+                        Some(IOData(crate::utils::take_bytes(bytes, bytes.len())))
                     },
                     Some(None) => {
-                        let d = [0; 255];
-                        Some(IOData(0, d))
+                        Some(IOData(vec![]))
                     }
                     None => None
                 };

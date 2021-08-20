@@ -152,14 +152,14 @@ fn do_stuff() {
         }
 
         async fn write_data_1(input_chan_snd: &mut Sender<IOData>, tapcontrol: &mut FaucetControl) {
-            input_chan_snd.send(IOData(8, [65; 255])).await.unwrap();
-            input_chan_snd.send(IOData(8, [66; 255])).await.unwrap();
+            input_chan_snd.send(IOData(vec![65; 8])).await.unwrap();
+            input_chan_snd.send(IOData(vec![66; 8])).await.unwrap();
             async_std::task::sleep(Duration::from_millis(100)).await;
             tapcontrol.pause().await.unwrap();
-            input_chan_snd.send(IOData(8, [67; 255])).await.unwrap();
-            input_chan_snd.send(IOData(8, [68; 255])).await.unwrap();
-            input_chan_snd.send(IOData(8, [69; 255])).await.unwrap();
-            input_chan_snd.send(IOData(8, [70; 255])).await.unwrap();
+            input_chan_snd.send(IOData(vec![67; 8])).await.unwrap();
+            input_chan_snd.send(IOData(vec![68; 8])).await.unwrap();
+            input_chan_snd.send(IOData(vec![69; 8])).await.unwrap();
+            input_chan_snd.send(IOData(vec![70; 8])).await.unwrap();
             tapcontrol.resume().await.unwrap();
             input_chan_snd.close();
         }

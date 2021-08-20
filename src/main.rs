@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 // use std::time::{ Duration, Instant };
 use async_std::io as aio;
-use pipeawesome2::{buffer::Buffer, drain::Drain, faucet::Faucet, junction::Junction, launch::Launch, waiter::{ WaiterError, Waiter }, motion::{ Pull, Push } };
+use pipeawesome2::{buffer::Buffer, drain::Drain, faucet::Faucet, junction::Junction, launch::Launch, motion::{Pull, Push, ReadSplitControl}, waiter::{ WaiterError, Waiter }};
 use async_std::task;
 
 async fn do_stuff() -> Result<usize, WaiterError> {
@@ -10,7 +10,7 @@ async fn do_stuff() -> Result<usize, WaiterError> {
     let stdout = aio::stdout();
     let stderr = aio::stderr();
 
-    let mut faucet = Faucet::new(Pull::Stdin(stdin));
+    let mut faucet = Faucet::new(Pull::Stdin(stdin, ReadSplitControl::new()));
     let mut junction_0 = Junction::new();
     let mut junction_1 = Junction::new();
     let mut junction_2 = Junction::new();
@@ -42,14 +42,14 @@ async fn do_stuff() -> Result<usize, WaiterError> {
         None,
         None,
         "mawk".to_string(),
-        Some(vec!["-W".to_string(), "interactive".to_string(), "-v".to_string(), "letter=O".to_string(), r#"{ printf("%s %s: ", $1, letter); for (i=2; i<=NF; i++) printf("%s", $i); print "" }"#.to_string()])
+        Some(vec!["-W".to_string(), "interactive".to_string(), "-v".to_string(), "letter=O".to_string(), r#"{ printf("%s %s: ", $1, letter); for (i=2; i<=NF; i++) printf("%s ", $i); print "" }"#.to_string()])
     );
 
     let mut launch_add_letter_e: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
         None,
         None,
         "mawk".to_string(),
-        Some(vec!["-W".to_string(), "interactive".to_string(), "-v".to_string(), "letter=E".to_string(), r#"{ printf("%s %s: ", $1, letter); for (i=2; i<=NF; i++) printf("%s", $i); print "" }"#.to_string()])
+        Some(vec!["-W".to_string(), "interactive".to_string(), "-v".to_string(), "letter=E".to_string(), r#"{ printf("%s %s: ", $1, letter); for (i=2; i<=NF; i++) printf("%s ", $i); print "" }"#.to_string()])
     );
 
     let mut slow_0: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(

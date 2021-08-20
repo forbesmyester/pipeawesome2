@@ -188,14 +188,10 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
 
     fn get_input() -> VecDeque<IOData> {
         let mut vdq: VecDeque<IOData> = VecDeque::new();
-        let vdq_data_0: [u8; 255] = [65; 255];
-        let vdq_data_1: [u8; 255] = [66; 255];
-        let vdq_data_2: [u8; 255] = [67; 255];
-        let vdq_data_3: [u8; 255] = [68; 255];
-        vdq.push_front(IOData(8, vdq_data_3));
-        vdq.push_front(IOData(8, vdq_data_2));
-        vdq.push_front(IOData(8, vdq_data_1));
-        vdq.push_front(IOData(8, vdq_data_0));
+        vdq.push_front(IOData(vec![68; 255]));
+        vdq.push_front(IOData(vec![67; 255]));
+        vdq.push_front(IOData(vec![66; 255]));
+        vdq.push_front(IOData(vec![65; 255]));
         vdq
     }
 
@@ -210,10 +206,10 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
         ((Ok(proc_count), v), monitoring_msg) => {
             assert_eq!(
                 vec![
-                    IOData(8, [65; 255]),
-                    IOData(8, [66; 255]),
-                    IOData(8, [67; 255]),
-                    IOData(8, [68; 255]),
+                    IOData(vec![65; 255]),
+                    IOData(vec![66; 255]),
+                    IOData(vec![67; 255]),
+                    IOData(vec![68; 255]),
                 ],
                 v
             );

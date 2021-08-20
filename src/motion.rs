@@ -1,12 +1,15 @@
 // use types::{Pull, MotionResult, IOData};
 use async_std::channel::{Receiver, RecvError, SendError, Sender, TryRecvError};
+use futures::AsyncRead;
 use std::collections::VecDeque;
 use async_std::io as aio;
 use async_std::process as aip;
 use async_std::prelude::*;
 
+use crate::utils::take_bytes;
+
 #[derive(Debug, PartialEq, Clone)]
-pub struct IOData (pub usize, pub [u8; 255]);
+pub struct IOData(pub Vec<u8>);
 
 #[derive(PartialEq,Debug)]
 pub enum MonitorMessage {
@@ -22,10 +25,22 @@ pub enum IODataWrapper {
 }
 
 #[derive(Debug)]
+pub struct ReadSplitControl {
+    split_at: Vec<Vec<u8>>,
+    overflow: Vec<u8>,
+}
+
+impl ReadSplitControl {
+    pub fn new() -> ReadSplitControl {
+        ReadSplitControl { split_at: vec!["\r\n".as_bytes().iter().copied().collect(), "\n".as_bytes().iter().copied().collect()], overflow: vec![] }
+    }
+}
+
+#[derive(Debug)]
 pub enum Pull {
-    CmdStdout(aip::ChildStdout),
-    CmdStderr(aip::ChildStderr),
-    Stdin(aio::Stdin),
+    CmdStdout(aip::ChildStdout, ReadSplitControl),
+    CmdStderr(aip::ChildStderr, ReadSplitControl),
+    Stdin(aio::Stdin, ReadSplitControl),
     Receiver(Receiver<IOData>),
     Mock(VecDeque<IOData>),
     None,
@@ -92,9 +107,85 @@ impl From<SendError<MonitorMessage>> for MotionError {
     }
 }
 
+fn is_split(buf: &[u8], splits: &Vec<Vec<u8>>) -> Option<usize>
+{
+    for v in splits {
+        if v.len() > buf.len() {
+            continue;
+        }
+        let (pre, _) = buf.split_at(v.len());
+        if pre == v {
+            return Some(v.len());
+        }
+    }
+    None
+}
+
+
+async fn motion_read_buffer(rd: &mut (dyn AsyncRead + Unpin + Send), overflow: &mut ReadSplitControl) -> Result<Vec<u8>, MotionError> {
+
+    loop {
+
+        // It might already have been read into the buffer
+        for overflow_pos in 0..overflow.overflow.len() {
+            if let Some(split_length) = is_split(overflow.overflow.split_at(overflow_pos).1, &overflow.split_at) {
+                let mut new_overflow = overflow.overflow.split_off(overflow_pos + split_length);
+                std::mem::swap(&mut new_overflow, &mut overflow.overflow);
+                return Ok(new_overflow)
+            }
+        }
+
+        let mut buf: [u8; 255] = [0; 255];
+        let bytes_read = rd.read(&mut buf).await?;
+
+        // If end of stream
+        if bytes_read == 0
+        {
+            return Ok(std::mem::take(&mut overflow.overflow));
+        }
+
+        overflow.overflow.extend_from_slice(buf.split_at(bytes_read).0);
+
+
+        // // Read the data then break and store at seperator
+        // for buf_pos in 0..bytes_read {
+        //     // If we found a split point
+        //     if let Some(split_length) = is_split(buf.split_at(buf_pos).1, &overflow.split_at) {
+        //         // Split it
+        //         let (pre, post) = buf.split_at(buf_pos + split_length);
+        //         // println!("(buf_pos, split_length, pre, post): ({:?}, {:?}, {:?}, {:?})", buf_pos, split_length, pre, post);
+
+        //         // Take what is in the overflow and append up to the split point, this is what we will return
+        //         let mut r = std::mem::take(&mut overflow.overflow);
+        //         r.extend_from_slice(pre);
+
+        //         // The new overflow is everything past the split point
+        //         overflow.overflow.extend_from_slice(post.split_at(bytes_read - (buf_pos + split_length)).0);
+
+        //         return Ok(r)
+        //     }
+        // }
+
+        // overflow.overflow.extend_from_slice(buf.split_at(bytes_read).0);
+    }
+
+}
 
 pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataWrapper> {
-    let mut buf: [u8; 255] = [0; 255];
+
+    async fn read_and_return(rd: &mut (dyn AsyncRead + Unpin + Send)) -> Result<Vec<u8>, MotionError> {
+        let mut buf: [u8; 255] = [0; 255];
+        let n = rd.read(&mut buf).await?;
+        Ok(take_bytes(&buf, n))
+    }
+
+    fn do_match_stuff(v: Vec<u8>) -> IODataWrapper {
+        if v.is_empty() {
+            return IODataWrapper::Finished;
+        }
+        IODataWrapper::IOData(IOData(v))
+    }
+
     match (stdin, do_try) {
         (Pull::None, false) => Ok(IODataWrapper::Finished),
         (Pull::Mock(v), _) => MotionResult::Ok(v.pop_front().map(IODataWrapper::IOData).unwrap_or(IODataWrapper::Finished)),
@@ -107,37 +198,25 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
             Err(TryRecvError::Empty) => Ok(IODataWrapper::Skipped),
             Err(TryRecvError::Closed) => Ok(IODataWrapper::Finished),
         },
-        (Pull::CmdStderr(rd), false) => {
-            match rd.read(&mut buf).await? {
-                0 => Ok(IODataWrapper::Finished),
-                n => Ok(IODataWrapper::IOData(IOData(n, buf))),
-            }
-        }
-        (Pull::CmdStdout(rd), false) => {
-            match rd.read(&mut buf).await? {
-                0 => Ok(IODataWrapper::Finished),
-                n => Ok(IODataWrapper::IOData(IOData(n, buf))),
-            }
-        }
-        (Pull::Stdin(rd), false) => {
-            match rd.read(&mut buf).await? {
-                0 => Ok(IODataWrapper::Finished),
-                n => Ok(IODataWrapper::IOData(IOData(n, buf))),
-            }
-        }
+        (Pull::CmdStderr(rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
+        (Pull::CmdStdout(rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
+        (Pull::Stdin(rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
+        // (Pull::CmdStderr(rd, overflow), false) => read_and_return(rd).await.map(do_match_stuff),
+        // (Pull::CmdStdout(rd, overflow), false) => read_and_return(rd).await.map(do_match_stuff),
+        // (Pull::Stdin(rd, overflow), false) => read_and_return(rd).await.map(do_match_stuff),
         (_, true) => panic!("Only Pull::Receiver and Pull::Mock can do a motion_read with do_try")
     }
 }
 
 pub async fn motion_write(stdout: &mut Push, data: IOData) -> MotionResult<()> {
-    match stdout {
-        Push::None => MotionResult::Ok(()),
-        Push::IoMock(v) => { v.push_back(data); Ok(()) },
-        Push::Sender(wr) => Ok(wr.send(data).await?),
-        Push::IoSender(wr) => Ok(wr.send(data).await?),
-        Push::CmdStdin(wr) => Ok(wr.write_all(&data.1[0..data.0]).await?),
-        Push::Stdout(wr) => Ok(wr.write_all(&data.1[0..data.0]).await?),
-        Push::Stderr(wr) => Ok(wr.write_all(&data.1[0..data.0]).await?),
+    match (stdout, data) {
+        (Push::None, IOData(_data)) => MotionResult::Ok(()),
+        (Push::IoMock(v), IOData(data)) => { v.push_back(IOData(data)); Ok(()) },
+        (Push::Sender(wr), IOData(data)) => Ok(wr.send(IOData(data)).await?),
+        (Push::IoSender(wr), IOData(data)) => Ok(wr.send(IOData(data)).await?),
+        (Push::CmdStdin(wr), IOData(data)) => Ok(wr.write_all(&data).await?),
+        (Push::Stdout(wr), IOData(data)) => Ok(wr.write_all(&data).await?),
+        (Push::Stderr(wr), IOData(data)) => Ok(wr.write_all(&data).await?),
     }
 }
 
@@ -271,8 +350,8 @@ fn test_motion() {
         let (chan_2_writ_snd, chan_2_writ_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
 
         let mut source = VecDeque::new();
-        source.push_back(IOData(1, [1; 255]));
-        source.push_back(IOData(1, [2; 255]));
+        source.push_back(IOData(vec![1]));
+        source.push_back(IOData(vec![2]));
         let (s_snd0, s_rcv0) = bounded(1);
         let pull_config_1 = vec![Pull::Mock(source)];
         let push_config_1 = vec![Push::IoSender(s_snd0)];
@@ -323,10 +402,10 @@ fn test_motion() {
         assert_eq!(
             stdout,
             &[
-                IODataWrapper::IOData(IOData(1, [1; 255])),
-                IODataWrapper::IOData(IOData(1, [1; 255])),
-                IODataWrapper::IOData(IOData(1, [2; 255])),
-                IODataWrapper::IOData(IOData(1, [2; 255])),
+                IODataWrapper::IOData(IOData(vec![1])),
+                IODataWrapper::IOData(IOData(vec![1])),
+                IODataWrapper::IOData(IOData(vec![2])),
+                IODataWrapper::IOData(IOData(vec![2])),
                 IODataWrapper::Finished,
             ]
         );
@@ -365,6 +444,81 @@ fn test_motion() {
     }
 
     println!("R: {:?}", async_std::task::block_on(test_motion_impl()));
-
-    // assert_eq!(1, 0);
 }
+
+#[test]
+fn test_motion_read_buffer() {
+use crate::fake_read::FakeReader;
+
+    use async_std::task;
+
+    async fn test_motion_read_buffer_impl() {
+
+        let mut fake_reader = FakeReader::new_by_size("Hows you?\r\nGreat, I had big lunch!\nWow!\nYes!".to_string(), 16);
+        let mut overflow = ReadSplitControl { split_at: vec![vec![13, 10]], overflow: vec![]};
+
+        let data_1 = motion_read_buffer(&mut fake_reader, &mut overflow).await;
+        println!("data_1: {:?}", data_1);
+        assert_eq!(
+            data_1,
+            Ok("Hows you?\r\n".as_bytes().iter().copied().collect())
+        );
+        assert_eq!(
+            overflow.overflow,
+            "Great".as_bytes().iter().copied().collect::<Vec<u8>>()
+        );
+
+        println!("===========================");
+        overflow.split_at = vec![vec![13, 10], vec![10]];
+        let data_2 = motion_read_buffer(&mut fake_reader, &mut overflow).await;
+        println!("data_1: {:?}", data_1);
+        assert_eq!(
+            data_2,
+            Ok("Great, I had big lunch!\n".as_bytes().iter().copied().collect())
+        );
+        assert_eq!(
+            overflow.overflow,
+            "Wow!\nYes!".as_bytes().iter().copied().collect::<Vec<u8>>()
+        );
+
+        println!("===========================");
+        let data_3 = motion_read_buffer(&mut fake_reader, &mut overflow).await;
+        println!("data_1: {:?}", data_1);
+        assert_eq!(
+            data_3,
+            Ok("Wow!\n".as_bytes().iter().copied().collect())
+        );
+        assert_eq!(
+            overflow.overflow,
+            "Yes!".as_bytes().iter().copied().collect::<Vec<u8>>()
+        );
+
+        println!("===========================");
+        let data_4 = motion_read_buffer(&mut fake_reader, &mut overflow).await;
+        println!("data_1: {:?}", data_1);
+        assert_eq!(
+            data_4,
+            Ok("Yes!".as_bytes().iter().copied().collect())
+        );
+        assert!(overflow.overflow.is_empty());
+
+        println!("===========================");
+        let data_5 = motion_read_buffer(&mut fake_reader, &mut overflow).await;
+        println!("data_1: {:?}", data_1);
+        assert!(data_5.unwrap().is_empty());
+        assert!(overflow.overflow.is_empty());
+
+    }
+
+    task::block_on(test_motion_read_buffer_impl());
+
+}
+
+#[test]
+fn test_is_split() {
+    assert_eq!(is_split("hello".as_bytes(), &vec![vec!['h' as u8]]), Some(1));
+    assert_eq!(is_split("hello".as_bytes(), &vec!["he".as_bytes().iter().copied().collect()]), Some(2));
+    assert_eq!(is_split("hello".as_bytes(), &vec!["hello".as_bytes().iter().copied().collect()]), Some(5));
+    assert_eq!(is_split("hello".as_bytes(), &vec!["hello bob".as_bytes().iter().copied().collect()]), None);
+}
+
