@@ -107,7 +107,7 @@ impl From<SendError<MonitorMessage>> for MotionError {
     }
 }
 
-fn is_split(buf: &[u8], splits: &Vec<Vec<u8>>) -> Option<usize>
+fn is_split(buf: &[u8], splits: &[Vec<u8>]) -> Option<usize>
 {
     for v in splits {
         if v.len() > buf.len() {

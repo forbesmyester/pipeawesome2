@@ -114,28 +114,16 @@ async fn do_stuff() -> Result<usize, WaiterError> {
 
 }
 
-
 fn main() {
 
-    // let (input_chan_snd, input_chan_rcv) = bounded(8);
+    // assert_eq!(list_parser::list("[1,1,2,3,5,8]"), Ok(vec![1, 1, 2, 3, 5, 8]));
+
 
 
     // println!("{:?}", task::block_on(pipeawesome2::tap::test_tap_impl()));
     // println!("{:?}", task::block_on(pipeawesome2::buffer::test_buffer_impl()));
     // println!("{:?}", task::block_on(pipeawesome2::junction::test_junction_impl()));
     println!("{:?}", task::block_on(do_stuff()));
-    // use pipeawesome2::buffer;
 
 
-
-    // let (mut data_storage) = &DataStorage::new();
-
-    // let pre_data_send = PreData { data: [0; 255], len: 0, source: Source (0, Port::TAP) };
-    // let post_data_send = data_storage.push(pre_data_send, 1);
-
-    // sender.send(post_data_send);
-
-    // std::thread::spawn(move || {
-    //     println!("{:?}", reciever.recv().unwrap());
-    // });
 }
