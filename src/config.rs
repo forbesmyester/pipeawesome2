@@ -9,6 +9,14 @@ pub enum OutputPort {
     Exit,
 }
 
+pub enum ComponentType {
+    Faucet,
+    Launch,
+    Junction,
+    Buffer,
+    Drain,
+}
+
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 //#[serde(tag = "input_port", content = "priority")]
 #[serde(rename_all = "lowercase")]
@@ -134,6 +142,14 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
             rule in_port() -> InputPort
                 = "[" p:port_preference() "]" { InputPort::In(p) }
 
+            rule component_type() -> Option<ComponentType>
+                = t:("f" / "d" / "j" / "b" / "l") {
+                    None
+                }
+
+            rule component_type_name_seperator() -> bool
+                = ":" { true }
+
             rule out_port() -> OutputPort
                 = "[" p:$(['E'|'O'|'X']) "]" {
                     match p {
@@ -251,6 +267,7 @@ fn test_load_connection_from_string() {
     );
 
     assert_eq!(
+        // load_connection_from_string("f:faucet[O] | [3]d:drain").unwrap(),
         load_connection_from_string("faucet[O] | [3]drain").unwrap(),
         vec![
             Connection::StartConnection { component_name: "faucet".to_string(), output_port: OutputPort::Out },
