@@ -18,11 +18,6 @@ pub fn remove_vec_vec<X>(vals: &mut Vec<Vec<X>>) {
     }
 }
 
-pub fn take_bytes(buf: &[u8], n: usize) -> Vec<u8> {
-    buf.split_at(n).0.iter().copied().collect()
-}
-
-
 #[test]
 fn test_remove_vec_vec_index() {
     let mut vals = vec![

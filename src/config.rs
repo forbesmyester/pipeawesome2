@@ -7,6 +7,7 @@ pub enum OutputPort {
     Err,
     Out,
     Exit,
+    Size
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
@@ -149,8 +150,9 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                 = ":" { true }
 
             rule out_port() -> OutputPort
-                = "[" p:$(['E'|'O'|'X']) "]" {
+                = "[" p:$(['E'|'O'|'X'|'S']) "]" {
                     match p {
+                        "S" => OutputPort::Size,
                         "X" => OutputPort::Exit,
                         "E" => OutputPort::Err,
                         "O" => OutputPort::Out,
@@ -272,7 +274,6 @@ fn test_load_connection_from_string() {
     );
 
     assert_eq!(
-        // load_connection_from_string("f:faucet[O] | [3]d:drain").unwrap(),
         load_connection_from_string("f:faucet[O] | [3]d:drain").unwrap(),
         vec![
             Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "faucet".to_string(), output_port: OutputPort::Out },

@@ -6,8 +6,6 @@ use async_std::io as aio;
 use async_std::process as aip;
 use async_std::prelude::*;
 
-use crate::utils::take_bytes;
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct IOData(pub Vec<u8>);
 
@@ -173,12 +171,6 @@ async fn motion_read_buffer(rd: &mut (dyn AsyncRead + Unpin + Send), overflow: &
 
 pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataWrapper> {
 
-    async fn read_and_return(rd: &mut (dyn AsyncRead + Unpin + Send)) -> Result<Vec<u8>, MotionError> {
-        let mut buf: [u8; 255] = [0; 255];
-        let n = rd.read(&mut buf).await?;
-        Ok(take_bytes(&buf, n))
-    }
-
     fn do_match_stuff(v: Vec<u8>) -> IODataWrapper {
         if v.is_empty() {
             return IODataWrapper::Finished;
@@ -201,9 +193,6 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
         (Pull::CmdStderr(rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
         (Pull::CmdStdout(rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
         (Pull::Stdin(rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
-        // (Pull::CmdStderr(rd, overflow), false) => read_and_return(rd).await.map(do_match_stuff),
-        // (Pull::CmdStdout(rd, overflow), false) => read_and_return(rd).await.map(do_match_stuff),
-        // (Pull::Stdin(rd, overflow), false) => read_and_return(rd).await.map(do_match_stuff),
         (_, true) => panic!("Only Pull::Receiver and Pull::Mock can do a motion_read with do_try")
     }
 }

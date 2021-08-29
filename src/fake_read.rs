@@ -73,15 +73,15 @@ fn fake_reader_works() {
 
         let read_count = match fr.read(&mut buffer).await {
             Ok(r) => r,
-            Err(e) => 0,
+            Err(_e) => 0,
         };
 
         assert_eq!(read_count, 8);
-        assert_eq!(buffer, "hi there".to_string().as_bytes());
+        assert_eq!(&buffer[0..8], "hi there".to_string().as_bytes());
 
 
     }
 
-    fake_reader_works_impl();
+    println!("{:?}", async_std::task::block_on(fake_reader_works_impl()));
 }
 

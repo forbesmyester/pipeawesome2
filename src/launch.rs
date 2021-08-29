@@ -176,7 +176,7 @@ impl <E: IntoIterator<Item = (K, V)>,
                     Some(Some(exit_status)) => {
                         let str = format!("{:?}", exit_status);
                         let bytes = str.as_bytes();
-                        Some(IOData(crate::utils::take_bytes(bytes, bytes.len())))
+                        Some(IOData(bytes.split_at(bytes.len()).0.iter().copied().collect()))
                     },
                     Some(None) => {
                         Some(IOData(vec![]))
