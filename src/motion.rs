@@ -197,6 +197,7 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
     }
 }
 
+
 pub async fn motion_write(stdout: &mut Push, data: IOData) -> MotionResult<()> {
     match (stdout, data) {
         (Push::None, IOData(_data)) => MotionResult::Ok(()),

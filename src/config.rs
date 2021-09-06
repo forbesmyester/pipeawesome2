@@ -139,16 +139,16 @@ fn config_serde() {
             ]
         }"#).unwrap(),
         Config {
-                faucet: HashMap::<_, _>::from_iter(IntoIter::new([("tap".to_string(), FaucetConfig { max_buffered: 1000, min_buffered: 500 })])),
-                launch: HashMap::<_, _>::from_iter(IntoIter::new([
+                faucet: HashMap::<_, _>::from_iter([("tap".to_string(), FaucetConfig { max_buffered: 1000, min_buffered: 500 })]),
+                launch: HashMap::<_, _>::from_iter([
                     ( "command_1".to_string(), LaunchConfig { command: "cat".to_string(), arg: vec![], path: None, env: HashMap::new() } ),
                     ( "command_2".to_string(), LaunchConfig {
                         command: "cat".to_string(),
                         arg: vec!["-n".to_string()],
                         path: Some("/home/forbesmyester".to_string()),
-                        env: HashMap::<_, _>::from_iter(IntoIter::new([( "USER".to_string(), "forbesmyester".to_string() )]))
+                        env: HashMap::<_, _>::from_iter([( "USER".to_string(), "forbesmyester".to_string() ) ])
                     } ),
-                ])),
+                ]),
                 connection: vec![
                 DeserializedConnections::Connections(vec![
                     Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out },
