@@ -295,13 +295,19 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                     m
                 }
 
-            pub rule connection_set() -> Vec<Connection>
+            pub rule connection_set_has() -> Vec<Connection>
                 = s:component_start() pipe() m:line_middle()* e:component_end() {
                     let mut r = vec![s];
                     r.extend_from_slice(&m);
                     r.extend_from_slice(&[e]);
                     r
                 }
+
+            pub rule connection_set_none() -> Vec<Connection>
+                = "" { vec![] }
+
+            pub rule connection_set() -> Vec<Connection>
+                = x:( connection_set_has() / connection_set_none() ) { x }
 
         }
     }
@@ -313,6 +319,11 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
 
 #[test]
 fn test_load_connection_from_string() {
+
+    assert_eq!(
+        load_connection_from_string("").unwrap(),
+        vec![ ]
+    );
 
     assert_eq!(
         load_connection_from_string("f:faucet[O] | [22]l:command[E] | b:x | l:y[O] | [-2]d:drain").unwrap(),
