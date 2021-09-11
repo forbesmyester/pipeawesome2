@@ -89,7 +89,7 @@ pub struct Config {
     faucet: HashMap<String, FaucetConfig>,
     #[serde(default = "HashMap::new")]
     launch: HashMap<String, LaunchConfig>,
-    connection: Vec<DeserializedConnections>,
+    connection: HashMap<String, DeserializedConnections>,
 }
 
 
@@ -97,27 +97,22 @@ pub struct Config {
 fn config_serde() {
 
     assert_eq!(
-        serde_json::from_str::<Config>(r#"{"connection": ["faucet[O] | [3]drain"]}"#).unwrap(),
-        Config { faucet: HashMap::new(), launch: HashMap::new(), connection: vec![ DeserializedConnections::String("faucet[O] | [3]drain".to_string()) ] }
-    );
-
-    println!("TO STRING: {}", serde_json::to_string(
-        &Config {
-            launch: HashMap::new(),
+        serde_json::from_str::<Config>(r#"{"connection": {"a": "faucet[O] | [3]drain"}}"#).unwrap(),
+        Config {
             faucet: HashMap::new(),
-            connection: vec![
-                DeserializedConnections::Connections(vec![
-                    Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "faucet".to_string(), output_port: OutputPort::Out },
-                    Connection::EndConnection { component_type: ComponentType::Drain, component_name: "x".to_string(), input_port: InputPort::In(5) }
-                ])
-            ]
+            launch: HashMap::new(),
+            connection: HashMap::<_, _>::from_iter([
+                ("a".to_string(), DeserializedConnections::String("faucet[O] | [3]drain".to_string()))
+            ])
         }
-    ).unwrap());
+    );
 
     assert_eq!(
         serde_json::from_str::<Connection>(r#"{"component_type": "drain", "component_name": "x", "input_port": "in", "priority": 5}"#).unwrap(),
         Connection::EndConnection { component_type: ComponentType::Drain, component_name: "x".to_string(), input_port: InputPort::In(5) }
     );
+
+    // pa --faucet-src=- --drain-dst=- --faucet-min-max tap100,1000 --launch-command command_1=cat --launch-command command_2=cat --launch-env command_2=USER=forbesmyester --launch-arg command_2=-n --launch-path command_2=/home/forbesmyester --connection 0='command1[S] | tap'
 
     assert_eq!(
         serde_json::from_str::<Config>(r#"{
@@ -131,12 +126,12 @@ fn config_serde() {
                     "min_buffered": 500
                 }
             },
-            "connection": [
-                [ { "component_type": "faucet", "component_name": "tap", "output_port": "out" }, { "component_type": "launch", "component_name": "command_1", "output_port": "out", "input_port": "in", "priority": 3 }],
-                "command_1 | command_2",
-                "command_1[S] | tap",
-                [ { "component_type": "launch", "component_name": "command_2", "output_port": "out", "input_port": "in", "priority": 3 }, { "component_type": "drain", "component_name": "drain", "input_port": "in", "priority": 3 } ]
-            ]
+            "connection": {
+                "ynmds": [ { "component_type": "faucet", "component_name": "tap", "output_port": "out" }, { "component_type": "launch", "component_name": "command_1", "output_port": "out", "input_port": "in", "priority": 3 }],
+                "trfxg": "command_1 | command_2",
+                "oojza": "command_1[S] | tap",
+                "ynbhz": [ { "component_type": "launch", "component_name": "command_2", "output_port": "out", "input_port": "in", "priority": 3 }, { "component_type": "drain", "component_name": "drain", "input_port": "in", "priority": 3 } ]
+            }
         }"#).unwrap(),
         Config {
                 faucet: HashMap::<_, _>::from_iter([("tap".to_string(), FaucetConfig { max_buffered: 1000, min_buffered: 500 })]),
@@ -149,18 +144,30 @@ fn config_serde() {
                         env: HashMap::<_, _>::from_iter([( "USER".to_string(), "forbesmyester".to_string() ) ])
                     } ),
                 ]),
-                connection: vec![
-                DeserializedConnections::Connections(vec![
-                    Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out },
-                    Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, input_port: InputPort::In(3) },
-                ]),
-                DeserializedConnections::String("command_1 | command_2".to_string()),
-                DeserializedConnections::String("command_1[S] | tap".to_string()),
-                DeserializedConnections::Connections(vec![
-                    Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, input_port: InputPort::In(3) },
-                    Connection::EndConnection { component_type: ComponentType::Drain, component_name: "drain".to_string(), input_port: InputPort::In(3) }
+                connection: HashMap::<_, _>::from_iter([
+                    (
+                        "ynmds".to_string(),
+                        DeserializedConnections::Connections(vec![
+                            Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out },
+                            Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, input_port: InputPort::In(3) },
+                        ])
+                    ),
+                    (
+                        "trfxg".to_string(),
+                        DeserializedConnections::String("command_1 | command_2".to_string())
+                    ),
+                    (
+                        "oojza".to_string(),
+                        DeserializedConnections::String("command_1[S] | tap".to_string())
+                    ),
+                    (
+                        "ynbhz".to_string(),
+                        DeserializedConnections::Connections(vec![
+                            Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, input_port: InputPort::In(3) },
+                            Connection::EndConnection { component_type: ComponentType::Drain, component_name: "drain".to_string(), input_port: InputPort::In(3) }
+                        ])
+                    )
                 ])
-            ]
         }
     );
 
@@ -184,13 +191,18 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                 = "[" p:port_preference() "]" { InputPort::In(p) }
 
             rule component_type() -> ComponentType
-                = t:$("f" / "d" / "j" / "b" / "l") {
+                = t:$("faucet" / "drain" / "junction" / "buffer" / "launch" / "f" / "d" / "j" / "b" / "l") {
                     match t {
                         "f" => ComponentType::Faucet,
                         "d" => ComponentType::Drain,
                         "j" => ComponentType::Junction,
                         "b" => ComponentType::Buffer,
                         "l" => ComponentType::Launch,
+                        "faucet" => ComponentType::Faucet,
+                        "drain" => ComponentType::Drain,
+                        "junction" => ComponentType::Junction,
+                        "buffer" => ComponentType::Buffer,
+                        "launch" => ComponentType::Launch,
                         _ => panic!("'{}' is not a valid component type", t)
                     }
                 }
@@ -326,7 +338,7 @@ fn test_load_connection_from_string() {
     );
 
     assert_eq!(
-        load_connection_from_string("f:faucet[O] | [22]l:command[E] | b:x | l:y[O] | [-2]d:drain").unwrap(),
+        load_connection_from_string("f:faucet[O] | [22]l:command[E] | buffer:x | l:y[O] | [-2]d:drain").unwrap(),
         vec![
             Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "faucet".to_string(), output_port: OutputPort::Out },
             Connection::MiddleConnection { input_port: InputPort::In(22), component_type: ComponentType::Launch, component_name: "command".to_string(), output_port: OutputPort::Err },

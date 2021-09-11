@@ -12,3 +12,4 @@ peg = "0.7.0"
 serde = { version = "1.0.117", features = ["derive"] }
 async-std = { version = "1.9.0", features = ["unstable"] }
 petgraph = "0.6.0"
+clap = "2.33.3"
