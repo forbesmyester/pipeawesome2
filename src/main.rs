@@ -1,3 +1,6 @@
+use pipeawesome2::config::Config;
+use clap::ArgMatches;
+use clap::SubCommand;
 use clap::ArgGroup;
 use std::collections::HashMap;
 use clap::{ App, Arg };
@@ -115,25 +118,312 @@ async fn do_stuff() -> Result<usize, WaiterError> {
 
 }
 
-struct KMinMax {
-    k: String,
-    min: usize,
-    max: usize,
-}
-
-struct KV {
-    k: String,
-    v: String,
-}
-
-struct KKV {
-    kk: String,
-    k: String,
-    v: String,
-}
-
 fn get_clap_app() -> App<'static, 'static> {
 
+
+    fn get_required_arg_with<'a>(name: &'a str, help: &'a str, value_name: &'a str) -> Arg<'a, 'a> {
+        Arg::with_name(name)
+            .long(name)
+            .help(help)
+            .required(false)
+            .takes_value(true)
+            .value_name(value_name)
+    }
+
+    fn get_required_index_arg<'a>(name: &'a str, help: &'a str, index: u64) -> Arg<'a, 'a> {
+        Arg::with_name(name)
+            .help(help)
+            .required(true)
+            .index(index)
+    }
+
+
+    App::new("PipeAwesome")
+        .author("Matthew Forrester, githib.com@speechmarks.com")
+        .version("0.0.0")
+        .about("Like UNIX pipes, but on sterroids")
+
+        .subcommand(
+            SubCommand::with_name("config")
+                .arg(get_required_arg_with("config-in", "The config file to read, \"-\" for STDIN. If not specified it will be blank", "FILENAME"))
+                .arg(get_required_arg_with("config-out", "The config file to write, \"-\" for STDOUT. Defaults to the file being read (otherwise STDOUT)", "FILENAME"))
+                .subcommand(
+                    SubCommand::with_name("empty")
+                )
+
+                .subcommand(
+                    SubCommand::with_name("faucet")
+                        .arg(get_required_arg_with("id", "The ID of the faucet to modify", "ID"))
+                        .subcommand(
+                            SubCommand::with_name("source")
+                                .arg(get_required_index_arg("SOURCE", "SOURCE must be either a filename, \"-\" for STDIN, or empty for NULL input", 1))
+                        )
+                        .subcommand(
+                            SubCommand::with_name("watermark")
+                                .arg(get_required_index_arg("MIN", "MIN must be an integer", 1))
+                                .arg(get_required_index_arg("MAX", "MAX must be an integer greater than MIN", 2))
+                        )
+                        .subcommand(
+                            SubCommand::with_name("min-max-clear")
+                        )
+                )
+
+                .subcommand(
+                    SubCommand::with_name("drain")
+                        .arg(get_required_arg_with("id", "The ID of the drain to modify", "ID"))
+                        .subcommand(
+                            SubCommand::with_name("dst")
+                                .arg(Arg::from_usage("--destination=<DESTINATION> 'DESTINATION must be either a filename, \"-\" for STDIN, \"_\" for STDOUT or empty for NULL output'"))
+                        )
+                )
+
+                .subcommand(
+                    SubCommand::with_name("connection")
+                        .arg(get_required_arg_with("id", "The ID of the connection to modify", "ID"))
+                        .subcommand(
+                            SubCommand::with_name("join")
+                                .arg(Arg::from_usage("--join=<JOIN> 'The join to establish'"))
+                        )
+                        .subcommand(
+                            SubCommand::with_name("del")
+                        )
+                )
+
+                .subcommand(
+                    SubCommand::with_name("launch")
+                        .arg(get_required_arg_with("id", "The ID of the launch to modify", "ID"))
+                        .subcommand(
+                            SubCommand::with_name("command")
+                                .arg(Arg::from_usage("--command=<COMMAND> 'What to execute'"))
+                        )
+                        .subcommand(
+                            SubCommand::with_name("arg")
+                            .subcommand(
+                                SubCommand::with_name("add")
+                                    .arg(Arg::from_usage("--val=<ARGUMENT>... 'The argument to add'"))
+                            )
+                            .subcommand(
+                                SubCommand::with_name("clear")
+                            )
+                        )
+                        .subcommand(
+                            SubCommand::with_name("path")
+                                .subcommand(
+                                    SubCommand::with_name("set")
+                                        .arg(Arg::from_usage("--path=<PATH> 'PATH will be the directory in which the COMMAND in launch-cmd is ran in'"))
+                                )
+                        )
+                        .subcommand(
+                            SubCommand::with_name("env")
+                                .arg(Arg::from_usage("--id=<ID> 'The ID of the command to set (add / modify)'"))
+                                .subcommand(
+                                    SubCommand::with_name("add")
+                                        .arg(Arg::from_usage("--name=<NAME>... 'The name of the environmental variable'"))
+                                        .arg(Arg::from_usage("--val=<VALUE>... 'The value of the environmental variable'"))
+                                )
+                                .subcommand(
+                                    SubCommand::with_name("clear")
+                                )
+                                .subcommand(
+                                    SubCommand::with_name("remove")
+                                        .arg(Arg::from_usage("--name=<NAME> 'The name of the environmental variable'"))
+                                )
+                        )
+                )
+        )
+        .after_help("Longer explanation to appear after the options when \
+                     displaying the help information from --help or -h")
+}
+
+#[derive(Debug)]
+struct UserConfigOptionBase {
+    id: String,
+    config_in: String,
+    config_out: String,
+}
+
+#[derive(Debug)]
+enum UserConfigAction {
+    FaucetSrc {
+        base_options: UserConfigOptionBase,
+        src: String
+    },
+    FaucetWatermark {
+        base_options: UserConfigOptionBase,
+        min: usize,
+        max: usize,
+    }
+}
+
+
+fn get_user_config_action<'a>(matches: &'a ArgMatches) -> Result<UserConfigAction, String> {
+
+    #[derive(Debug)]
+    struct CollectedSubcommands<'a> {
+        subcommands: Vec<(&'a ArgMatches<'a>, &'a str)>,
+        final_sub_command: &'a ArgMatches<'a>
+    }
+
+    fn collect_subcommands<'a>(matches: &'a ArgMatches) -> CollectedSubcommands<'a> {
+
+        fn subcommand_inquire<'a>(mut v: CollectedSubcommands<'a>) -> CollectedSubcommands<'a> {
+            match v.final_sub_command.subcommand() {
+                (s, Some(am2)) => {
+                    v.subcommands.push((am2, s));
+                    v.final_sub_command = am2;
+                    subcommand_inquire(v)
+                },
+                _ => v
+            }
+        }
+
+        subcommand_inquire(CollectedSubcommands { subcommands: vec![], final_sub_command: matches })
+    }
+
+    fn get_standard_config_opts<'a>(first_sub_command: Option<&'a ArgMatches>, second_sub_command: Option<&'a ArgMatches>) -> Result<UserConfigOptionBase, String> {
+
+
+        let first = first_sub_command.map(|sc1| sc1.value_of("config-in").or(Some("-"))).flatten();
+
+        let standard_options = (
+            first,
+            first_sub_command.map(|sc1| sc1.value_of("config-out")).flatten().or(first),
+            second_sub_command.map(|sc2| sc2.value_of("id")).flatten()
+        );
+
+        match standard_options {
+            (Some(config_in), Some(config_out), Some(id)) => {
+                Ok(UserConfigOptionBase { config_in: config_in.to_string(), config_out: config_out.to_string(), id: id.to_string() })
+            },
+            _ => Err("Somehow we didn't understand those commands".to_string())
+        }
+
+    }
+
+    fn option_of_tuples_to_option_tuple<X>(x: (Option<X>, Option<X>)) -> Option<(X, X)> {
+        if let (Some(a), Some(b)) = x {
+            return Some((a, b));
+        }
+        None
+    }
+
+
+    fn get_user_action<'a>(mut collected_subcommands: CollectedSubcommands<'a>) -> Result<UserConfigAction, String> {
+        use std::iter::FromIterator;
+
+        let base_options = get_standard_config_opts(
+            collected_subcommands.subcommands.iter().map(|x| x.0).nth(0),
+            collected_subcommands.subcommands.iter().map(|x| x.0).nth(1)
+        )?;
+
+        let coll_subcomm_str: Vec<&str> = collected_subcommands.subcommands.iter().map(|x| x.1).collect();
+        let last_sub_command: Option<&ArgMatches> = collected_subcommands.subcommands.iter().map(|x| x.0).last();
+
+        match &coll_subcomm_str[..] {
+            ["config", "faucet", "source"] => {
+                last_sub_command
+                    .map(|lsc| lsc.value_of("SOURCE")).flatten()
+                    .map(|src| UserConfigAction::FaucetSrc { base_options, src: src.to_string() })
+                    .ok_or("Command {:?} did not have all required values".to_string())
+            },
+            ["config", "faucet", "watermark"] => {
+                last_sub_command
+                    .map(|lsc| {
+                        (
+                            lsc.value_of("MIN").map(|a| a.parse::<usize>().ok()).flatten(),
+                            lsc.value_of("MAX").map(|a| a.parse::<usize>().ok()).flatten()
+                        )
+                    })
+                    .map(|tup| option_of_tuples_to_option_tuple((tup.0, tup.1))).flatten()
+                    .map(|tup| UserConfigAction::FaucetWatermark { base_options, min: tup.0, max: tup.1 })
+                    .ok_or("Command {:?} did not have all required values".to_string())
+            },
+            _ => {
+                Err(format!("Unhandled: {:?}", coll_subcomm_str))
+            }
+        }
+    }
+
+    get_user_action(collect_subcommands(&matches))
+
+}
+
+fn read_config_as_str(config_in: &str) -> Result<String, String> {
+
+    use std::io::prelude::*;
+    let mut buffer = String::new();
+
+    if config_in == "-" {
+        let mut stdin = std::io::stdin(); // We get `Stdin` here.
+        stdin.read_to_string(&mut buffer).map_err(|_x| "We could not read STDIN to get the config".to_string())?;
+        return Ok(buffer);
+    }
+
+    let mut f = std::fs::File::open("config_in").map_err(|_x| format!("We could not open the file '{}' to get the config", config_in).to_string())?;
+    f.read_to_string(&mut buffer).map_err(|_x| format!("We could not open the file '{}' to get the config", config_in).to_string())?;
+    Ok(buffer)
+}
+
+fn parse_config_str(config_str: &str) -> Result<Config, String> {
+    serde_json::from_str::<Config>(config_str).map_err(|_x| "Could not parse config".to_string())
+}
+
+fn read_config(user_action: &UserConfigAction) -> Result<Config, String> {
+    match user_action {
+        UserConfigAction::FaucetSrc { base_options: UserConfigOptionBase { config_in, ..}, .. } => {
+            result_flatten(read_config_as_str(config_in).map(|cas| parse_config_str(&cas)))
+        },
+        UserConfigAction::FaucetWatermark { base_options: UserConfigOptionBase { id, config_in, config_out }, min, max } => {
+            result_flatten(read_config_as_str(config_in).map(|cas| parse_config_str(&cas)))
+        }
+    }
+
+}
+
+fn result_flatten<X>(x: Result<Result<X, String>, String>) -> Result<X, String> {
+    match x {
+        Ok(Ok(x)) => Ok(x),
+        Ok(Err(s)) => Err(s),
+        Err(s) => Err(s),
+    }
+}
+
+fn main() {
+
+    let app = get_clap_app();
+    let matches = app.get_matches();
+
+    let config_and_action: Result<(Config, UserConfigAction), String> = match get_user_config_action(&matches) {
+        Ok(ua) => read_config(&ua).map(|c| (c, ua)),
+        Err(e) => Err(e),
+    };
+
+
+    let new_config = match config_and_action {
+        Err(x) => Err(x),
+        Ok((old_config, UserConfigAction::FaucetSrc { base_options: UserConfigOptionBase { id, .. }, src, .. })) => {
+            Ok(Config::faucet_set_source(old_config, id, src))
+        },
+        Ok((old_config, UserConfigAction::FaucetWatermark { base_options: UserConfigOptionBase { id, .. }, min, max, .. })) => {
+            Ok(Config::faucet_set_watermark(old_config, id, min, max))
+        },
+    };
+
+
+    match result_flatten(new_config.map(|new_cfg| serde_json::to_string(&new_cfg).map_err(|_x| "Could not serialize new Config".to_string()))) {
+        Err(msg) => {
+            eprintln!("{:?}", msg);
+            std::process::exit(1);
+        }
+        Ok(json) => {
+            println!("{}", json);
+        }
+    }
+
+
+}
+
+// == Probably dead! ================================================
 
     fn as_kv<'a>(form: &str, s: &'a str) -> Result<(&'a str, &'a str), String> {
         s.split_once('=')
@@ -206,48 +496,20 @@ fn get_clap_app() -> App<'static, 'static> {
         }
     }
 
-
-    App::new("PipeAwesome")
-        .author("Matthew Forrester, githib.com@speechmarks.com")
-        .version("0.0.0")
-        .about("Like UNIX pipes, but on sterroids")
-        .arg(Arg::with_name("in_file").index(1))
-
-        .arg(kv_arg_quick("faucet-src-set", "ID=SOURCE", "SOURCE must be either a filename, \"-\" for STDIN, or empty for NULL input", |x| kv_validator("ID=SOURCE", x).map(|_x| ())))
-        .arg(kv_arg_quick("faucet-min-max-set", "ID=MIN,MAX", "Try keep the size of all buffers pointing to ID between MIN and MAX", |x| min_max_validator("ID=MIN,MAX", x).map(|_x| ())))
-        .arg(kv_arg_quick("faucet-min-max-clr", "ID", "Remove min / max setting from faucet ID", |x| non_empty_string_validator("ID", x).map(|_x| ())))
-
-        .arg(kv_arg_quick("drain-dst-set", "ID=DESTINATION", "DESTINATION must be either a filename, \"-\" for STDIN, \"_\" for STDOUT or empty for NULL output", |x| kv_validator("ID=DESTINATION", x).map(|_x| ())))
-
-        .arg(kv_arg_quick("launch-cmd-set", "ID=COMMAND", "COMMAND is the command that will be executed", |x| kv_validator("ID=COMMAND", x).map(|_x| ())))
-        .arg(kv_arg_quick("launch-arg-add", "ID=ARGUMENT", "ARGUMENT that will be an argument to COMMAND in launch-cmd", |x| kv_validator("ID=ARGUMENT", x).map(|_x| ())))
-        .arg(kv_arg_quick("launch-arg-clr", "ID", "Remove all arguments from launch ID", |x| non_empty_string_validator("ID", x).map(|_x| ())))
-        .arg(kv_arg_quick("launch-path-set", "ID=PATH", "PATH will be the directory in which the COMMAND in launch-cmd is ran in", |x| kv_validator("ID=PATH", x).map(|_x| ())))
-        .arg(kv_arg_quick("launch-env-add", "ID=NAME=VALUE", "Sets the environmental variable NAME to VALUE for the COMMAND in launch-cmd", |x| kkv_validator("ID=NAME=VALUE", x).map(|_x| ())))
-        .arg(kv_arg_quick("launch-env-clr", "ID", "Remove all environmental variables from launch ID", |x| non_empty_string_validator("ID", x).map(|_x| ())))
-
-        .arg(kv_arg_quick("connection-add", "ID=CONNECTION", "Join things", |x| kv_validator("ID=CONNECTION", x).map(|_x| ())))
-        .arg(kv_arg_quick("connection-del", "ID", "Remove connection with ID", |x| non_empty_string_validator("ID", x).map(|_x| ())))
-        .group(ArgGroup::with_name("launch")
-             .args(&["launch-cmd-set", "launch-arg-add", "launch-arg-clr", "launch-path-set", "launch-env-add", "launch-env-clr"])
-        )
-        .after_help("Longer explanation to appear after the options when \
-                     displaying the help information from --help or -h")
+struct KMinMax {
+    k: String,
+    min: usize,
+    max: usize,
 }
 
-fn main() {
-
-    let app = get_clap_app();
-    app.get_matches();
-
-    // assert_eq!(list_parser::list("[1,1,2,3,5,8]"), Ok(vec![1, 1, 2, 3, 5, 8]));
-
-
-
-    // println!("{:?}", task::block_on(pipeawesome2::tap::test_tap_impl()));
-    // println!("{:?}", task::block_on(pipeawesome2::buffer::test_buffer_impl()));
-    // println!("{:?}", task::block_on(pipeawesome2::junction::test_junction_impl()));
-    // println!("{:?}", task::block_on(do_stuff()));
-
-
+struct KV {
+    k: String,
+    v: String,
 }
+
+struct KKV {
+    kk: String,
+    k: String,
+    v: String,
+}
+

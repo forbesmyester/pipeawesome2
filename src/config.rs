@@ -38,7 +38,7 @@ struct LaunchConfig {
 
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
-struct FaucetConfig {
+pub struct FaucetConfig {
     min_buffered: usize,
     max_buffered: usize,
 }
@@ -84,21 +84,83 @@ pub enum DeserializedConnections {
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
-pub struct Config {
+pub struct FlowConfig {
     #[serde(default = "HashMap::new")]
     faucet: HashMap<String, FaucetConfig>,
     #[serde(default = "HashMap::new")]
     launch: HashMap<String, LaunchConfig>,
+    #[serde(default = "HashMap::new")]
     connection: HashMap<String, DeserializedConnections>,
 }
+
+
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+pub struct ExecutionConfig {
+    #[serde(default = "HashMap::new")]
+    faucet: HashMap<String, String>,
+    #[serde(default = "HashMap::new")]
+    drain: HashMap<String, String>,
+}
+
+impl ExecutionConfig {
+    pub fn new() -> ExecutionConfig {
+        ExecutionConfig {
+            faucet: HashMap::new(),
+            drain: HashMap::new(),
+        }
+    }
+}
+
+impl FlowConfig {
+    pub fn new() -> FlowConfig {
+        FlowConfig {
+            faucet: HashMap::new(),
+            launch: HashMap::new(),
+            connection: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+pub struct Config {
+    #[serde(default = "ExecutionConfig::new")]
+    execution: ExecutionConfig,
+    #[serde(default = "FlowConfig::new")]
+    flow: FlowConfig,
+}
+
+
+impl Config {
+    pub fn faucet_set_watermark(mut config: Config, faucet_id: String, min: usize, max: usize) -> Config {
+        let mut faucet_config = match min > max {
+            true => FaucetConfig { min_buffered: max, max_buffered: min },
+            false => FaucetConfig { min_buffered: min, max_buffered: max },
+        };
+        config.flow.faucet.entry(faucet_id).and_modify(|x| std::mem::swap(x, &mut faucet_config)).or_insert(faucet_config);
+        config
+    }
+
+    pub fn faucet_set_source(mut config: Config, faucet_id: String, mut faucet_source: String) -> Config {
+        config.execution.faucet.entry(faucet_id).and_modify(|x| std::mem::swap(x, &mut faucet_source)).or_insert(faucet_source);
+        config
+    }
+
+    pub fn new() -> Config {
+        Config {
+            flow: FlowConfig { faucet: HashMap::new(), launch: HashMap::new(), connection: HashMap::new() },
+            execution: ExecutionConfig { faucet: HashMap::new(), drain: HashMap::new() }
+        }
+    }
+}
+
 
 
 #[test]
 fn config_serde() {
 
     assert_eq!(
-        serde_json::from_str::<Config>(r#"{"connection": {"a": "faucet[O] | [3]drain"}}"#).unwrap(),
-        Config {
+        serde_json::from_str::<FlowConfig>(r#"{"connection": {"a": "faucet[O] | [3]drain"}}"#).unwrap(),
+        FlowConfig {
             faucet: HashMap::new(),
             launch: HashMap::new(),
             connection: HashMap::<_, _>::from_iter([
@@ -115,7 +177,7 @@ fn config_serde() {
     // pa --faucet-src=- --drain-dst=- --faucet-min-max tap100,1000 --launch-command command_1=cat --launch-command command_2=cat --launch-env command_2=USER=forbesmyester --launch-arg command_2=-n --launch-path command_2=/home/forbesmyester --connection 0='command1[S] | tap'
 
     assert_eq!(
-        serde_json::from_str::<Config>(r#"{
+        serde_json::from_str::<FlowConfig>(r#"{
             "launch": {
                 "command_1": { "command": "cat" },
                 "command_2": { "command": "cat", "env": { "USER": "forbesmyester" }, "arg": ["-n"], "path": "/home/forbesmyester" }
@@ -133,7 +195,7 @@ fn config_serde() {
                 "ynbhz": [ { "component_type": "launch", "component_name": "command_2", "output_port": "out", "input_port": "in", "priority": 3 }, { "component_type": "drain", "component_name": "drain", "input_port": "in", "priority": 3 } ]
             }
         }"#).unwrap(),
-        Config {
+        FlowConfig {
                 faucet: HashMap::<_, _>::from_iter([("tap".to_string(), FaucetConfig { max_buffered: 1000, min_buffered: 500 })]),
                 launch: HashMap::<_, _>::from_iter([
                     ( "command_1".to_string(), LaunchConfig { command: "cat".to_string(), arg: vec![], path: None, env: HashMap::new() } ),
@@ -168,6 +230,21 @@ fn config_serde() {
                         ])
                     )
                 ])
+        }
+    );
+
+    assert_eq!(
+        serde_json::from_str::<Config>("{}").unwrap(),
+        Config {
+            flow: FlowConfig {
+                faucet: HashMap::new(),
+                launch: HashMap::new(),
+                connection: HashMap::new(),
+            },
+            execution: ExecutionConfig {
+                faucet: HashMap::new(),
+                drain: HashMap::new(),
+            }
         }
     );
 
