@@ -34,6 +34,14 @@ impl ReadSplitControl {
     }
 }
 
+
+impl Default for ReadSplitControl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
 #[derive(Debug)]
 pub enum Pull {
     CmdStdout(aip::ChildStdout, ReadSplitControl),

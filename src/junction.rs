@@ -84,7 +84,7 @@ impl Junction {
             false => back_off.wait().await,
             true => back_off.reset(),
         };
-        return MotionResult::Ok((false, read_count))
+        MotionResult::Ok((false, read_count))
     }
 
 }

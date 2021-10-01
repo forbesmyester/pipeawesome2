@@ -1,122 +1,123 @@
+use pipeawesome2::config::Connection;
+use pipeawesome2::config::DeserializedConnection;
+use pipeawesome2::config::load_connection_from_string;
 use pipeawesome2::config::Config;
 use clap::ArgMatches;
 use clap::SubCommand;
-use clap::ArgGroup;
 use std::collections::HashMap;
 use clap::{ App, Arg };
-use async_std::io as aio;
-use pipeawesome2::{buffer::Buffer, drain::Drain, faucet::Faucet, junction::Junction, launch::Launch, motion::{Pull, Push, ReadSplitControl}, waiter::{ WaiterError, Waiter }};
-use async_std::task;
+// use async_std::io as aio;
+// use pipeawesome2::{buffer::Buffer, drain::Drain, faucet::Faucet, junction::Junction, launch::Launch, motion::{Pull, Push, ReadSplitControl}, waiter::{ WaiterError, Waiter }};
 
-async fn do_stuff() -> Result<usize, WaiterError> {
-
-    let stdin = aio::stdin();
-    let stdout = aio::stdout();
-    let stderr = aio::stderr();
-
-    let mut faucet = Faucet::new(Pull::Stdin(stdin, ReadSplitControl::new()));
-    let mut junction_0 = Junction::new();
-    let mut junction_1 = Junction::new();
-    let mut junction_2 = Junction::new();
-    let mut drain = Drain::new(Push::Stdout(stdout));
-    let mut buffer = Buffer::new();
-
-    let mut launch_line_numbers: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-        None,
-        None,
-        "mawk".to_string(),
-        Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ printf("%04d %s\n", NR, $0) }"#.to_string()])
-    );
-
-    let mut launch_filter_odd_only: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-        None,
-        None,
-        "mawk".to_string(),
-        Some(vec!["-W".to_string(), "interactive".to_string(), "-f".to_string(), "res/modulus_print.awk".to_string(), "-v".to_string(), "rem=1".to_string()])
-    );
-
-    let mut launch_filter_even_only: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-        None,
-        None,
-        "mawk".to_string(),
-        Some(vec!["-W".to_string(), "interactive".to_string(), "-f".to_string(), "res/modulus_print.awk".to_string(), "-v".to_string(), "rem=0".to_string()])
-    );
-
-    let mut launch_add_letter_o: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-        None,
-        None,
-        "mawk".to_string(),
-        Some(vec!["-W".to_string(), "interactive".to_string(), "-v".to_string(), "letter=O".to_string(), r#"{ printf("%s %s: ", $1, letter); for (i=2; i<=NF; i++) printf("%s ", $i); print "" }"#.to_string()])
-    );
-
-    let mut launch_add_letter_e: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-        None,
-        None,
-        "mawk".to_string(),
-        Some(vec!["-W".to_string(), "interactive".to_string(), "-v".to_string(), "letter=E".to_string(), r#"{ printf("%s %s: ", $1, letter); for (i=2; i<=NF; i++) printf("%s ", $i); print "" }"#.to_string()])
-    );
-
-    let mut slow_0: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-        None,
-        None,
-        "mawk".to_string(),
-        Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ system("sleep 0.1"); print $0 }"#.to_string()])
-    );
-
-    let mut launch_decorate_exit: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-        None,
-        None,
-        "mawk".to_string(),
-        Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ print "EXIT: " $0 }"#.to_string()])
-    );
-
-    let mut slow_1: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-        None,
-        None,
-        "mawk".to_string(),
-        Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ system("sleep 0.2"); print $0 }"#.to_string()])
-    );
-
-
-    slow_0.add_stdin(faucet.add_stdout());
-    launch_line_numbers.add_stdin(slow_0.add_stdout());
-    junction_0.add_stdin(launch_line_numbers.add_stdout(), false);
-    launch_add_letter_e.add_stdin(junction_0.add_stdout());
-    launch_add_letter_o.add_stdin(junction_0.add_stdout());
-    launch_filter_even_only.add_stdin(launch_add_letter_e.add_stdout());
-    launch_filter_odd_only.add_stdin(launch_add_letter_o.add_stdout());
-    junction_1.add_stdin(launch_filter_even_only.add_stdout(), false);
-    junction_1.add_stdin(launch_filter_odd_only.add_stdout(), false);
-
-    buffer.add_stdin(junction_1.add_stdout());
-    slow_1.add_stdin(buffer.add_stdout());
-    launch_decorate_exit.add_stdin(launch_line_numbers.add_exit_status());
-    junction_2.add_stdin(launch_decorate_exit.add_stdout(), false);
-    junction_2.add_stdin(slow_1.add_stdout(), false);
-    drain.add_stdin(junction_2.add_stdout());
-
-    let mut w = Waiter::new();
-
-    w.add_drain("drain".to_string(), drain);
-    w.add_faucet("faucet".to_string(), faucet);
-    w.add_launch("launch_line_numbers".to_string(), launch_line_numbers);
-    w.add_launch("launch_filter_odd_only".to_string(), launch_filter_odd_only);
-    w.add_launch("launch_filter_even_only".to_string(), launch_filter_even_only);
-    // w.add_launch("launch_sort".to_string(), launch_sort);
-    w.add_launch("launch_add_letter_e".to_string(), launch_add_letter_e);
-    w.add_launch("launch_add_letter_o".to_string(), launch_add_letter_o);
-    w.add_launch("slow_0".to_string(), slow_0);
-    w.add_launch("slow_1".to_string(), slow_1);
-    w.add_launch("launch_decorate_exit".to_string(), launch_decorate_exit);
-    w.add_buffer("buffer".to_string(), buffer);
-    w.add_junction("junction_0".to_string(), junction_0);
-    w.add_junction("junction_1".to_string(), junction_1);
-    w.add_junction("junction_2".to_string(), junction_2);
-    w.configure_faucet("faucet".to_string(), vec!["buffer".to_string()], 1, 2);
-
-    w.start().await
-
-}
+// async fn do_stuff() -> Result<usize, WaiterError> {
+// 
+//     let stdin = aio::stdin();
+//     let stdout = aio::stdout();
+//     let stderr = aio::stderr();
+// 
+//     let mut faucet = Faucet::new(Pull::Stdin(stdin, ReadSplitControl::new()));
+//     let mut junction_0 = Junction::new();
+//     let mut junction_1 = Junction::new();
+//     let mut junction_2 = Junction::new();
+//     let mut drain = Drain::new(Push::Stdout(stdout));
+//     let mut buffer = Buffer::new();
+// 
+//     let mut launch_line_numbers: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+//         None,
+//         None,
+//         "mawk".to_string(),
+//         Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ printf("%04d %s\n", NR, $0) }"#.to_string()])
+//     );
+// 
+//     let mut launch_filter_odd_only: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+//         None,
+//         None,
+//         "mawk".to_string(),
+//         Some(vec!["-W".to_string(), "interactive".to_string(), "-f".to_string(), "res/modulus_print.awk".to_string(), "-v".to_string(), "rem=1".to_string()])
+//     );
+// 
+//     let mut launch_filter_even_only: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+//         None,
+//         None,
+//         "mawk".to_string(),
+//         Some(vec!["-W".to_string(), "interactive".to_string(), "-f".to_string(), "res/modulus_print.awk".to_string(), "-v".to_string(), "rem=0".to_string()])
+//     );
+// 
+//     let mut launch_add_letter_o: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+//         None,
+//         None,
+//         "mawk".to_string(),
+//         Some(vec!["-W".to_string(), "interactive".to_string(), "-v".to_string(), "letter=O".to_string(), r#"{ printf("%s %s: ", $1, letter); for (i=2; i<=NF; i++) printf("%s ", $i); print "" }"#.to_string()])
+//     );
+// 
+//     let mut launch_add_letter_e: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+//         None,
+//         None,
+//         "mawk".to_string(),
+//         Some(vec!["-W".to_string(), "interactive".to_string(), "-v".to_string(), "letter=E".to_string(), r#"{ printf("%s %s: ", $1, letter); for (i=2; i<=NF; i++) printf("%s ", $i); print "" }"#.to_string()])
+//     );
+// 
+//     let mut slow_0: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+//         None,
+//         None,
+//         "mawk".to_string(),
+//         Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ system("sleep 0.1"); print $0 }"#.to_string()])
+//     );
+// 
+//     let mut launch_decorate_exit: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+//         None,
+//         None,
+//         "mawk".to_string(),
+//         Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ print "EXIT: " $0 }"#.to_string()])
+//     );
+// 
+//     let mut slow_1: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+//         None,
+//         None,
+//         "mawk".to_string(),
+//         Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ system("sleep 0.2"); print $0 }"#.to_string()])
+//     );
+// 
+// 
+//     slow_0.add_stdin(faucet.add_stdout());
+//     launch_line_numbers.add_stdin(slow_0.add_stdout());
+//     junction_0.add_stdin(launch_line_numbers.add_stdout(), false);
+//     launch_add_letter_e.add_stdin(junction_0.add_stdout());
+//     launch_add_letter_o.add_stdin(junction_0.add_stdout());
+//     launch_filter_even_only.add_stdin(launch_add_letter_e.add_stdout());
+//     launch_filter_odd_only.add_stdin(launch_add_letter_o.add_stdout());
+//     junction_1.add_stdin(launch_filter_even_only.add_stdout(), false);
+//     junction_1.add_stdin(launch_filter_odd_only.add_stdout(), false);
+// 
+//     buffer.add_stdin(junction_1.add_stdout());
+//     slow_1.add_stdin(buffer.add_stdout());
+//     launch_decorate_exit.add_stdin(launch_line_numbers.add_exit_status());
+//     junction_2.add_stdin(launch_decorate_exit.add_stdout(), false);
+//     junction_2.add_stdin(slow_1.add_stdout(), false);
+//     drain.add_stdin(junction_2.add_stdout());
+// 
+//     let mut w = Waiter::new();
+// 
+//     w.add_drain("drain".to_string(), drain);
+//     w.add_faucet("faucet".to_string(), faucet);
+//     w.add_launch("launch_line_numbers".to_string(), launch_line_numbers);
+//     w.add_launch("launch_filter_odd_only".to_string(), launch_filter_odd_only);
+//     w.add_launch("launch_filter_even_only".to_string(), launch_filter_even_only);
+//     // w.add_launch("launch_sort".to_string(), launch_sort);
+//     w.add_launch("launch_add_letter_e".to_string(), launch_add_letter_e);
+//     w.add_launch("launch_add_letter_o".to_string(), launch_add_letter_o);
+//     w.add_launch("slow_0".to_string(), slow_0);
+//     w.add_launch("slow_1".to_string(), slow_1);
+//     w.add_launch("launch_decorate_exit".to_string(), launch_decorate_exit);
+//     w.add_buffer("buffer".to_string(), buffer);
+//     w.add_junction("junction_0".to_string(), junction_0);
+//     w.add_junction("junction_1".to_string(), junction_1);
+//     w.add_junction("junction_2".to_string(), junction_2);
+//     w.configure_faucet("faucet".to_string(), vec!["buffer".to_string()], 1, 2);
+// 
+//     w.start().await
+// 
+// }
 
 fn get_clap_app() -> App<'static, 'static> {
 
@@ -130,11 +131,21 @@ fn get_clap_app() -> App<'static, 'static> {
             .value_name(value_name)
     }
 
+
     fn get_required_index_arg<'a>(name: &'a str, help: &'a str, index: u64) -> Arg<'a, 'a> {
         Arg::with_name(name)
             .help(help)
             .required(true)
             .index(index)
+    }
+
+
+    fn get_multi_arg<'a>(name: &'a str, help: &'a str, index: u64) -> Arg<'a, 'a> {
+        Arg::with_name(name)
+            .help(help)
+            .required(true)
+            .index(index)
+            .multiple(true)
     }
 
 
@@ -149,6 +160,10 @@ fn get_clap_app() -> App<'static, 'static> {
                 .arg(get_required_arg_with("config-out", "The config file to write, \"-\" for STDOUT. Defaults to the file being read (otherwise STDOUT)", "FILENAME"))
                 .subcommand(
                     SubCommand::with_name("empty")
+                )
+
+                .subcommand(
+                    SubCommand::with_name("lint")
                 )
 
                 .subcommand(
@@ -172,8 +187,8 @@ fn get_clap_app() -> App<'static, 'static> {
                     SubCommand::with_name("drain")
                         .arg(get_required_arg_with("id", "The ID of the drain to modify", "ID"))
                         .subcommand(
-                            SubCommand::with_name("dst")
-                                .arg(Arg::from_usage("--destination=<DESTINATION> 'DESTINATION must be either a filename, \"-\" for STDIN, \"_\" for STDOUT or empty for NULL output'"))
+                            SubCommand::with_name("destination")
+                                .arg(get_required_index_arg("DESTINATION", "DESTINATION must be either a filename, \"-\" for STDIN, \"_\" for STDOUT or empty for NULL output", 1))
                         )
                 )
 
@@ -182,7 +197,7 @@ fn get_clap_app() -> App<'static, 'static> {
                         .arg(get_required_arg_with("id", "The ID of the connection to modify", "ID"))
                         .subcommand(
                             SubCommand::with_name("join")
-                                .arg(Arg::from_usage("--join=<JOIN> 'The join to establish'"))
+                                .arg(get_required_index_arg("JOIN", "The Join to extablish either as a JoinString or JSON", 1))
                         )
                         .subcommand(
                             SubCommand::with_name("del")
@@ -194,40 +209,19 @@ fn get_clap_app() -> App<'static, 'static> {
                         .arg(get_required_arg_with("id", "The ID of the launch to modify", "ID"))
                         .subcommand(
                             SubCommand::with_name("command")
-                                .arg(Arg::from_usage("--command=<COMMAND> 'What to execute'"))
+                                .arg(get_required_index_arg("COMMAND", "The command to run, can be a full path if not in your $PATH", 1))
                         )
                         .subcommand(
-                            SubCommand::with_name("arg")
-                            .subcommand(
-                                SubCommand::with_name("add")
-                                    .arg(Arg::from_usage("--val=<ARGUMENT>... 'The argument to add'"))
-                            )
-                            .subcommand(
-                                SubCommand::with_name("clear")
-                            )
-                        )
-                        .subcommand(
-                            SubCommand::with_name("path")
-                                .subcommand(
-                                    SubCommand::with_name("set")
-                                        .arg(Arg::from_usage("--path=<PATH> 'PATH will be the directory in which the COMMAND in launch-cmd is ran in'"))
-                                )
+                            SubCommand::with_name("args")
+                                .arg(get_multi_arg("ARGS", "Arguments that will be passed to the program", 1))
                         )
                         .subcommand(
                             SubCommand::with_name("env")
-                                .arg(Arg::from_usage("--id=<ID> 'The ID of the command to set (add / modify)'"))
-                                .subcommand(
-                                    SubCommand::with_name("add")
-                                        .arg(Arg::from_usage("--name=<NAME>... 'The name of the environmental variable'"))
-                                        .arg(Arg::from_usage("--val=<VALUE>... 'The value of the environmental variable'"))
-                                )
-                                .subcommand(
-                                    SubCommand::with_name("clear")
-                                )
-                                .subcommand(
-                                    SubCommand::with_name("remove")
-                                        .arg(Arg::from_usage("--name=<NAME> 'The name of the environmental variable'"))
-                                )
+                                .arg(get_multi_arg("ENV", "The environmental variables for the program, specifiy as NAME=VALUE", 1))
+                        )
+                        .subcommand(
+                            SubCommand::with_name("path")
+                                .arg(get_required_index_arg("PATH", "PATH will be the directory in which the COMMAND in launch-cmd is ran in", 1))
                         )
                 )
         )
@@ -244,19 +238,60 @@ struct UserConfigOptionBase {
 
 #[derive(Debug)]
 enum UserConfigAction {
+    LaunchCommand {
+        base_options: UserConfigOptionBase,
+        command: String,
+    },
+    LaunchPath {
+        base_options: UserConfigOptionBase,
+        path: String,
+    },
+    LaunchArgs {
+        base_options: UserConfigOptionBase,
+        args: Vec<String>,
+    },
+    LaunchEnv {
+        base_options: UserConfigOptionBase,
+        env: HashMap<String, String>,
+    },
     FaucetSrc {
         base_options: UserConfigOptionBase,
-        src: String
+        src: String,
+    },
+    DrainDst {
+        base_options: UserConfigOptionBase,
+        dst: String,
     },
     FaucetWatermark {
         base_options: UserConfigOptionBase,
         min: usize,
         max: usize,
-    }
+    },
+    ConnectionJoin {
+        base_options: UserConfigOptionBase,
+        join: String,
+    },
+    ConfigLintShow {
+        config_in: String,
+    },
 }
 
 
-fn get_user_config_action<'a>(matches: &'a ArgMatches) -> Result<UserConfigAction, String> {
+pub fn convert_to_deserialized_connection(s: String) -> Result<DeserializedConnection, String> {
+    if let Ok(_conns) = load_connection_from_string(&s) {
+        return Ok(DeserializedConnection::JoinString(s));
+    }
+    if let Ok(conn) = serde_json::from_str::<Connection>(&s) {
+        return Ok(DeserializedConnection::Connections(vec![conn]));
+    }
+    if let Ok(conns) = serde_json::from_str::<Vec<Connection>>(&s) {
+        return Ok(DeserializedConnection::Connections(conns));
+    }
+    Err(format!("Looks neither like JSON or JoinString '{}'", s))
+}
+
+
+fn get_user_config_action(matches: &ArgMatches) -> Result<UserConfigAction, String> {
 
     #[derive(Debug)]
     struct CollectedSubcommands<'a> {
@@ -266,7 +301,7 @@ fn get_user_config_action<'a>(matches: &'a ArgMatches) -> Result<UserConfigActio
 
     fn collect_subcommands<'a>(matches: &'a ArgMatches) -> CollectedSubcommands<'a> {
 
-        fn subcommand_inquire<'a>(mut v: CollectedSubcommands<'a>) -> CollectedSubcommands<'a> {
+        fn subcommand_inquire(mut v: CollectedSubcommands) -> CollectedSubcommands {
             match v.final_sub_command.subcommand() {
                 (s, Some(am2)) => {
                     v.subcommands.push((am2, s));
@@ -280,7 +315,7 @@ fn get_user_config_action<'a>(matches: &'a ArgMatches) -> Result<UserConfigActio
         subcommand_inquire(CollectedSubcommands { subcommands: vec![], final_sub_command: matches })
     }
 
-    fn get_standard_config_opts<'a>(first_sub_command: Option<&'a ArgMatches>, second_sub_command: Option<&'a ArgMatches>) -> Result<UserConfigOptionBase, String> {
+    fn get_standard_config_opts<'a>(first_sub_command: Option<&'a ArgMatches>, second_sub_command: Option<&'a ArgMatches>, second_name: Option<&str>) -> Result<UserConfigOptionBase, String> {
 
 
         let first = first_sub_command.map(|sc1| sc1.value_of("config-in").or(Some("-"))).flatten();
@@ -288,13 +323,16 @@ fn get_user_config_action<'a>(matches: &'a ArgMatches) -> Result<UserConfigActio
         let standard_options = (
             first,
             first_sub_command.map(|sc1| sc1.value_of("config-out")).flatten().or(first),
-            second_sub_command.map(|sc2| sc2.value_of("id")).flatten()
+            second_sub_command.map(|sc2| sc2.value_of("id")).flatten(),
+            second_name
         );
 
         match standard_options {
-            (Some(config_in), Some(config_out), Some(id)) => {
+            (Some(config_in), Some(config_out), Some(id), _) => {
                 Ok(UserConfigOptionBase { config_in: config_in.to_string(), config_out: config_out.to_string(), id: id.to_string() })
             },
+            (_, _, None, Some(second_name)) => Err(format!("You need to specify an id for the '{}'", second_name)),
+            (_, _, None, _) => Err("You didn't correctly specify what to configure".to_string()),
             _ => Err("Somehow we didn't understand those commands".to_string())
         }
 
@@ -308,25 +346,44 @@ fn get_user_config_action<'a>(matches: &'a ArgMatches) -> Result<UserConfigActio
     }
 
 
-    fn get_user_action<'a>(mut collected_subcommands: CollectedSubcommands<'a>) -> Result<UserConfigAction, String> {
-        use std::iter::FromIterator;
+    fn get_user_action(collected_subcommands: CollectedSubcommands) -> Result<UserConfigAction, String> {
+
+        let first_sub_command = collected_subcommands.subcommands.iter().map(|x| x.0).next();
 
         let base_options = get_standard_config_opts(
-            collected_subcommands.subcommands.iter().map(|x| x.0).nth(0),
-            collected_subcommands.subcommands.iter().map(|x| x.0).nth(1)
-        )?;
+            first_sub_command,
+            collected_subcommands.subcommands.iter().map(|x| x.0).nth(1),
+            collected_subcommands.subcommands.iter().map(|x| x.1).nth(1)
+        );
 
         let coll_subcomm_str: Vec<&str> = collected_subcommands.subcommands.iter().map(|x| x.1).collect();
         let last_sub_command: Option<&ArgMatches> = collected_subcommands.subcommands.iter().map(|x| x.0).last();
 
-        match &coll_subcomm_str[..] {
-            ["config", "faucet", "source"] => {
+        match (base_options, &coll_subcomm_str[..]) {
+            (_, ["config", "lint"]) => {
+                Ok(UserConfigAction::ConfigLintShow {
+                    config_in: first_sub_command.map(|sc1| sc1.value_of("config-in")).flatten().unwrap_or("-").to_string()
+                })
+            },
+            (Ok(base_options), ["config", "connection", "join"]) => {
+                last_sub_command
+                    .map(|lsc| lsc.value_of("JOIN")).flatten()
+                    .map(|join| UserConfigAction::ConnectionJoin { base_options, join: join.to_string() })
+                    .ok_or_else(|| "Command {:?} did not have all required values".to_string())
+            },
+            (Ok(base_options), ["config", "drain", "destination"]) => {
+                last_sub_command
+                    .map(|lsc| lsc.value_of("DESTINATION")).flatten()
+                    .map(|dst| UserConfigAction::DrainDst { base_options, dst: dst.to_string() })
+                    .ok_or_else(|| "Command {:?} did not have all required values".to_string())
+            },
+            (Ok(base_options), ["config", "faucet", "source"]) => {
                 last_sub_command
                     .map(|lsc| lsc.value_of("SOURCE")).flatten()
                     .map(|src| UserConfigAction::FaucetSrc { base_options, src: src.to_string() })
-                    .ok_or("Command {:?} did not have all required values".to_string())
+                    .ok_or_else(|| "Command {:?} did not have all required values".to_string())
             },
-            ["config", "faucet", "watermark"] => {
+            (Ok(base_options), ["config", "faucet", "watermark"]) => {
                 last_sub_command
                     .map(|lsc| {
                         (
@@ -336,15 +393,79 @@ fn get_user_config_action<'a>(matches: &'a ArgMatches) -> Result<UserConfigActio
                     })
                     .map(|tup| option_of_tuples_to_option_tuple((tup.0, tup.1))).flatten()
                     .map(|tup| UserConfigAction::FaucetWatermark { base_options, min: tup.0, max: tup.1 })
-                    .ok_or("Command {:?} did not have all required values".to_string())
+                    .ok_or_else(|| "Command {:?} did not have all required values".to_string())
+            },
+            (Ok(base_options), ["config", "launch", "command"]) => {
+                last_sub_command
+                    .map(|lsc| lsc.value_of("COMMAND")).flatten()
+                    .map(|cmd| UserConfigAction::LaunchCommand { base_options, command: cmd.to_string() })
+                    .ok_or_else(|| "Command {:?} did not have all required values".to_string())
+            },
+            (Ok(base_options), ["config", "launch", "path"]) => {
+                last_sub_command
+                    .map(|lsc| lsc.value_of("PATH")).flatten()
+                    .map(|path| UserConfigAction::LaunchPath { base_options, path: path.to_string() })
+                    .ok_or_else(|| "Command {:?} did not have all required values".to_string())
+            },
+            (Ok(base_options), ["config", "launch", "args"]) => {
+                last_sub_command
+                    .map(|lsc|
+                        match lsc.values_of("ARGS") {
+                            None => vec![],
+                            Some(xs) => xs.map(|s| s.to_string()).collect()
+                        }
+                    )
+                    .map(|args| UserConfigAction::LaunchArgs { base_options, args })
+                    .ok_or_else(|| "Command {:?} did not have all required values".to_string())
+            },
+            (Ok(base_options), ["config", "launch", "env"]) => {
+                last_sub_command
+                    .ok_or_else(|| Err("Cannot read command".to_string()))
+                    .map(|lsc|
+                        match lsc.values_of("ENV") {
+                            None => vec![],
+                            Some(xs) => xs.map(|s| s.to_string()).collect()
+                        }
+                    )
+                    .map_err(|_e: Result<Vec<String>, std::string::String>| "Could not read argument ENV".to_string())
+                    .and_then(|envs_str| {
+                        fn as_kv(form: &str, s: String) -> Result<(String, String), String> {
+                            s.split_once('=')
+                                .ok_or(format!("{} does not include a name (must be in form {})", s, form))
+                                .and_then(|(a, b)| {
+                                    if a.is_empty() {
+                                        return Err(format!("{} The {} form must include a non-zero length NAME", s, form));
+                                    }
+                                    Ok((a.to_string(), b.to_string()))
+                                })
+                        }
+
+                        envs_str.into_iter().fold(
+                            Ok(HashMap::new()),
+                            |hm, s| {
+                                match (hm, as_kv("NAME=VALUE", s)) {
+                                    (Ok(mut hm), Ok((k, mut v))) => {
+                                        hm.entry(k).and_modify(|x| std::mem::swap(x, &mut v)).or_insert(v);
+                                        Ok(hm)
+                                    }
+                                    (Err(e), _) => Err(e),
+                                    (_, Err(e)) => Err(e),
+                                }
+                            }
+                        )
+
+                    })
+                    .map(|env| UserConfigAction::LaunchEnv { base_options, env })
+                    .map_err(|_| "Command {:?} did not have all required values".to_string())
+
             },
             _ => {
-                Err(format!("Unhandled: {:?}", coll_subcomm_str))
+                Err(format!("The command {:?} requires further sub commands", coll_subcomm_str))
             }
         }
     }
 
-    get_user_action(collect_subcommands(&matches))
+    get_user_action(collect_subcommands(matches))
 
 }
 
@@ -359,8 +480,8 @@ fn read_config_as_str(config_in: &str) -> Result<String, String> {
         return Ok(buffer);
     }
 
-    let mut f = std::fs::File::open("config_in").map_err(|_x| format!("We could not open the file '{}' to get the config", config_in).to_string())?;
-    f.read_to_string(&mut buffer).map_err(|_x| format!("We could not open the file '{}' to get the config", config_in).to_string())?;
+    let mut f = std::fs::File::open("config_in").map_err(|_x| format!("We could not open the file '{}' to get the config", config_in))?;
+    f.read_to_string(&mut buffer).map_err(|_x| format!("We could not open the file '{}' to get the config", config_in))?;
     Ok(buffer)
 }
 
@@ -368,16 +489,8 @@ fn parse_config_str(config_str: &str) -> Result<Config, String> {
     serde_json::from_str::<Config>(config_str).map_err(|_x| "Could not parse config".to_string())
 }
 
-fn read_config(user_action: &UserConfigAction) -> Result<Config, String> {
-    match user_action {
-        UserConfigAction::FaucetSrc { base_options: UserConfigOptionBase { config_in, ..}, .. } => {
-            result_flatten(read_config_as_str(config_in).map(|cas| parse_config_str(&cas)))
-        },
-        UserConfigAction::FaucetWatermark { base_options: UserConfigOptionBase { id, config_in, config_out }, min, max } => {
-            result_flatten(read_config_as_str(config_in).map(|cas| parse_config_str(&cas)))
-        }
-    }
-
+fn read_config(config_in: &str) -> Result<Config, String> {
+    result_flatten(read_config_as_str(config_in).map(|cas| parse_config_str(&cas)))
 }
 
 fn result_flatten<X>(x: Result<Result<X, String>, String>) -> Result<X, String> {
@@ -388,31 +501,60 @@ fn result_flatten<X>(x: Result<Result<X, String>, String>) -> Result<X, String> 
     }
 }
 
+fn process_user_config_action(result_config: Result<UserConfigAction, String>) -> Result<Config, String> {
+
+    match result_config {
+        Err(x) => Err(x),
+        Ok(UserConfigAction::ConnectionJoin { base_options: UserConfigOptionBase { id, config_in, .. }, join, .. }) => {
+            convert_to_deserialized_connection(join).and_then(|dsc|
+                read_config(&config_in).map(|old_config| Config::connection_join(old_config, id, dsc))
+            )
+        },
+        Ok(UserConfigAction::FaucetSrc { base_options: UserConfigOptionBase { id, config_in, .. }, src }) => {
+            read_config(&config_in).map(|old_config| Config::faucet_set_source(old_config, id, src))
+        },
+        Ok(UserConfigAction::DrainDst { base_options: UserConfigOptionBase { id, config_in, .. }, dst }) => {
+            read_config(&config_in).map(|old_config| Config::drain_set_destination(old_config, id, dst))
+        },
+        Ok(UserConfigAction::FaucetWatermark { base_options: UserConfigOptionBase { id, config_in, .. }, min, max }) => {
+            read_config(&config_in).map(|old_config| Config::faucet_set_watermark(old_config, id, min, max))
+        },
+        Ok(UserConfigAction::LaunchCommand { base_options: UserConfigOptionBase { id, config_in, .. }, command }) => {
+            read_config(&config_in).map(|old_config| Config::launch_set_command(old_config, id, command))
+        },
+        Ok(UserConfigAction::LaunchPath { base_options: UserConfigOptionBase { id, config_in, .. }, path }) => {
+            read_config(&config_in).map(|old_config| Config::launch_set_path(old_config, id, path))
+        },
+        Ok(UserConfigAction::LaunchArgs { base_options: UserConfigOptionBase { id, config_in, .. }, args }) => {
+            read_config(&config_in).map(|old_config| Config::launch_set_args(old_config, id, args))
+        },
+        Ok(UserConfigAction::LaunchEnv { base_options: UserConfigOptionBase { id, config_in, .. }, env }) => {
+            read_config(&config_in).map(|old_config| Config::launch_set_env(old_config, id, env))
+        },
+        Ok(UserConfigAction::ConfigLintShow { config_in }) => {
+            let config = read_config(&config_in)?;
+            let errs = Config::lint(config.clone());
+            if errs.is_empty() {
+                return Ok(config);
+            }
+            return Err(format!("We found the following warnings / errors: \n\n * {}\n", errs.join("\n * ")));
+        },
+    }
+
+}
+
 fn main() {
 
     let app = get_clap_app();
     let matches = app.get_matches();
 
-    let config_and_action: Result<(Config, UserConfigAction), String> = match get_user_config_action(&matches) {
-        Ok(ua) => read_config(&ua).map(|c| (c, ua)),
-        Err(e) => Err(e),
-    };
+    let new_config = process_user_config_action(get_user_config_action(&matches));
 
-
-    let new_config = match config_and_action {
-        Err(x) => Err(x),
-        Ok((old_config, UserConfigAction::FaucetSrc { base_options: UserConfigOptionBase { id, .. }, src, .. })) => {
-            Ok(Config::faucet_set_source(old_config, id, src))
-        },
-        Ok((old_config, UserConfigAction::FaucetWatermark { base_options: UserConfigOptionBase { id, .. }, min, max, .. })) => {
-            Ok(Config::faucet_set_watermark(old_config, id, min, max))
-        },
-    };
 
 
     match result_flatten(new_config.map(|new_cfg| serde_json::to_string(&new_cfg).map_err(|_x| "Could not serialize new Config".to_string()))) {
         Err(msg) => {
-            eprintln!("{:?}", msg);
+            eprintln!("{}", msg);
             std::process::exit(1);
         }
         Ok(json) => {
@@ -425,91 +567,79 @@ fn main() {
 
 // == Probably dead! ================================================
 
-    fn as_kv<'a>(form: &str, s: &'a str) -> Result<(&'a str, &'a str), String> {
-        s.split_once('=')
-            .ok_or(format!("{} does not include a name (must be in form {})", s, form))
-            .and_then(|(a, b)| {
-                if a.len() == 0 {
-                    return Err(format!("{} The {} form must include a non-zero length NAME", s, form));
-                }
-                Ok((a, b))
-            })
-    }
-
-
-    fn as_kkv<'a>(form: &str, s: &'a str) -> Result<(&'a str, &'a str, &'a str), String> {
-        let split: Vec<&str> = s.splitn(3, '=').collect();
-        match split.len() {
-            3 => Ok((split[0], split[1], split[2])),
-            _ => Err(format!("{} The {} form must include a non-zero length NAME", s, form))
-        }
-    }
-
-
-    // TODO: Must be above 0
-    fn min_max_validator(form: &str, s: String) -> Result<KMinMax, String>{
-        let (k, v) = as_kv(form, &s)?;
-
-        v.split_once(',')
-            .ok_or(format!("{} does not include a comma (must be in form {})", s, form))
-            .and_then(|(a, b)| {
-
-                match (a.parse::<usize>(), b.parse::<usize>()) {
-                    (Ok(aa), Ok(bb)) => {
-                        match aa > bb {
-                            true => Ok(KMinMax {k: k.to_string(), min: bb, max: aa }),
-                            false => Ok(KMinMax {k: k.to_string(), min: aa, max: bb }),
-                        }
-                    },
-                    _ => Err(format!("{} Min and Max must both be positive integers", s)),
-                }
-
-            })
-
-    }
-
-    fn kv_validator(form: &str, s: String) -> Result<KV, String>{
-        let (a, b) = as_kv(form, &s)?;
-        Ok(KV {k: a.to_string(), v: b.to_string()})
-    }
-
-    fn kkv_validator(form: &str, s: String) -> Result<KKV, String>{
-        let (a, b, c) = as_kkv(form, &s)?;
-        Ok(KKV {kk: a.to_string(), k: b.to_string(), v: c.to_string()})
-    }
-
-    fn kv_arg_quick<'a>(name: &'a str, form: &'a str, help: &'a str, validator: fn(String) -> Result<(), String>) -> Arg<'a, 'a> {
-        Arg::with_name(name)
-            .long(name)
-            .help(help)
-            .required(false)
-            .takes_value(true)
-            .multiple(true)
-            .value_name(form)
-            .validator(validator)
-    }
-
-    fn non_empty_string_validator(form: &str, s: String) -> Result<String, String>{
-        match s.len() {
-            0 => Err(format!("{} The {} form must be a non-zero length", s, form)),
-            _ => Ok(s),
-        }
-    }
-
-struct KMinMax {
-    k: String,
-    min: usize,
-    max: usize,
-}
-
-struct KV {
-    k: String,
-    v: String,
-}
-
-struct KKV {
-    kk: String,
-    k: String,
-    v: String,
-}
+//     fn as_kkv<'a>(form: &str, s: &'a str) -> Result<(&'a str, &'a str, &'a str), String> {
+//         let split: Vec<&str> = s.splitn(3, '=').collect();
+//         match split.len() {
+//             3 => Ok((split[0], split[1], split[2])),
+//             _ => Err(format!("{} The {} form must include a non-zero length NAME", s, form))
+//         }
+//     }
+// 
+// 
+//     // TODO: Must be above 0
+//     fn min_max_validator(form: &str, s: String) -> Result<KMinMax, String>{
+//         let (k, v) = as_kv(form, &s)?;
+// 
+//         v.split_once(',')
+//             .ok_or(format!("{} does not include a comma (must be in form {})", s, form))
+//             .and_then(|(a, b)| {
+// 
+//                 match (a.parse::<usize>(), b.parse::<usize>()) {
+//                     (Ok(aa), Ok(bb)) => {
+//                         match aa > bb {
+//                             true => Ok(KMinMax {k: k.to_string(), min: bb, max: aa }),
+//                             false => Ok(KMinMax {k: k.to_string(), min: aa, max: bb }),
+//                         }
+//                     },
+//                     _ => Err(format!("{} Min and Max must both be positive integers", s)),
+//                 }
+// 
+//             })
+// 
+//     }
+// 
+//     fn kv_validator(form: &str, s: String) -> Result<KV, String>{
+//         let (a, b) = as_kv(form, &s)?;
+//         Ok(KV {k: a.to_string(), v: b.to_string()})
+//     }
+// 
+//     fn kkv_validator(form: &str, s: String) -> Result<KKV, String>{
+//         let (a, b, c) = as_kkv(form, &s)?;
+//         Ok(KKV {kk: a.to_string(), k: b.to_string(), v: c.to_string()})
+//     }
+// 
+//     fn kv_arg_quick<'a>(name: &'a str, form: &'a str, help: &'a str, validator: fn(String) -> Result<(), String>) -> Arg<'a, 'a> {
+//         Arg::with_name(name)
+//             .long(name)
+//             .help(help)
+//             .required(false)
+//             .takes_value(true)
+//             .multiple(true)
+//             .value_name(form)
+//             .validator(validator)
+//     }
+// 
+//     fn non_empty_string_validator(form: &str, s: String) -> Result<String, String>{
+//         match s.len() {
+//             0 => Err(format!("{} The {} form must be a non-zero length", s, form)),
+//             _ => Ok(s),
+//         }
+//     }
+// 
+// struct KMinMax {
+//     k: String,
+//     min: usize,
+//     max: usize,
+// }
+// 
+// struct KV {
+//     k: String,
+//     v: String,
+// }
+// 
+// struct KKV {
+//     kk: String,
+//     k: String,
+//     v: String,
+// }
 
