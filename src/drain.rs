@@ -1,3 +1,7 @@
+use crate::connectable::Connectable;
+use crate::connectable::ConnectableAddInputError;
+use crate::connectable::OutputPort;
+use crate::connectable::ConnectableAddOutputError;
 use super::motion::{ MotionResult, MotionNotifications, Pull, Push, motion };
 
 use crate::{startable_control::StartableControl};
@@ -25,7 +29,30 @@ impl Drain {
         assert!(self.stdin.is_empty());
         self.stdin.push(pull);
     }
+
 }
+
+
+impl Connectable for Drain {
+
+    fn add_output(&mut self, port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
+        Err(ConnectableAddOutputError::UnsupportedForControl)
+    }
+
+    fn add_input(&mut self, pull: Pull, unused_priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
+        if unused_priority != 0 {
+            return Err(ConnectableAddInputError::UnsupportedPriority(unused_priority));
+        }
+        if !self.stdin.is_empty() {
+            return Err(ConnectableAddInputError::AlreadyAllocated);
+        }
+        self.stdin.push(pull);
+        Ok(())
+    }
+
+}
+
+
 
 #[async_trait]
 impl StartableControl for Drain {

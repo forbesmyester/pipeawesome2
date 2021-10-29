@@ -47,6 +47,7 @@ pub enum Pull {
     CmdStdout(aip::ChildStdout, ReadSplitControl),
     CmdStderr(aip::ChildStderr, ReadSplitControl),
     Stdin(aio::Stdin, ReadSplitControl),
+    File(async_std::fs::File, ReadSplitControl),
     Receiver(Receiver<IOData>),
     Mock(VecDeque<IOData>),
     None,
@@ -58,6 +59,7 @@ pub enum Push {
     CmdStdin(aip::ChildStdin),
     Stdout(aio::Stdout),
     Stderr(aio::Stderr),
+    File(aio::BufWriter<async_std::fs::File>),
     Sender(Sender<IOData>),
     IoSender(Sender<IOData>),
     None,
@@ -201,6 +203,7 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
         (Pull::CmdStderr(rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
         (Pull::CmdStdout(rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
         (Pull::Stdin(rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
+        (Pull::File(rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
         (_, true) => panic!("Only Pull::Receiver and Pull::Mock can do a motion_read with do_try")
     }
 }
@@ -214,6 +217,7 @@ pub async fn motion_write(stdout: &mut Push, data: IOData) -> MotionResult<()> {
         (Push::IoSender(wr), IOData(data)) => Ok(wr.send(IOData(data)).await?),
         (Push::CmdStdin(wr), IOData(data)) => Ok(wr.write_all(&data).await?),
         (Push::Stdout(wr), IOData(data)) => Ok(wr.write_all(&data).await?),
+        (Push::File(wr), IOData(data)) => Ok(wr.write_all(&data).await?),
         (Push::Stderr(wr), IOData(data)) => Ok(wr.write_all(&data).await?),
     }
 }
@@ -228,6 +232,7 @@ pub async fn motion_close(stdout: &mut Push) -> MotionResult<()> {
         Push::CmdStdin(wr) => Ok(wr.flush().await?),
         Push::Stdout(wr) => Ok(wr.flush().await?),
         Push::Stderr(wr) => Ok(wr.flush().await?),
+        Push::File(wr) => Ok(wr.flush().await?),
     }
 }
 

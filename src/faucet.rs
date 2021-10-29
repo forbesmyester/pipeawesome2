@@ -1,3 +1,7 @@
+use crate::connectable::Connectable;
+use crate::connectable::OutputPort;
+use crate::connectable::ConnectableAddOutputError;
+use crate::connectable::ConnectableAddInputError;
 use async_std::channel::{SendError, Receiver, bounded};
 use super::motion::{ MotionResult, MotionNotifications, Pull, Push, motion_close };
 use crate::startable_control::StartableControl;
@@ -12,6 +16,7 @@ pub struct Faucet {
 }
 
 impl Faucet {
+
 
     pub fn new(pull: Pull) -> Faucet {
         Faucet {
@@ -29,14 +34,6 @@ impl Faucet {
     }
 
 
-    pub fn add_stdout(&mut self) -> Pull {
-        assert!(!self.started);
-        assert!(self.stdout.is_empty());
-        let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout.push(Push::IoSender(child_stdout_push_channel));
-        Pull::Receiver(stdout_io_reciever_channel)
-    }
-
     pub fn get_control(&mut self) -> FaucetControl {
         assert!(self.control.is_none(), "Each faucet can only have one control");
         let (send, recv) = bounded(1);
@@ -48,6 +45,29 @@ impl Faucet {
     }
 
 }
+
+
+impl Connectable for Faucet {
+
+    fn add_output(&mut self, port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
+        if port != OutputPort::Out {
+            return Err(ConnectableAddOutputError::UnsupportedPort(port));
+        }
+        if !self.stdout.is_empty() {
+            return Err(ConnectableAddOutputError::AlreadyAllocated(port));
+        }
+        let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
+        self.stdout.push(Push::IoSender(child_stdout_push_channel));
+        Ok(Pull::Receiver(stdout_io_reciever_channel))
+    }
+
+    fn add_input(&mut self, pull: Pull, unused_priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
+        Err(ConnectableAddInputError::UnsupportedForControl)
+    }
+
+}
+
+
 
 #[async_trait]
 impl StartableControl for Faucet {
@@ -185,7 +205,7 @@ fn do_stuff() {
         let mut tap = Faucet::new(input);
         let mut tapcontrol = tap.get_control();
         tap.set_stdout_size(1);
-        let output_1 = tap.add_stdout();
+        let output_1 = tap.add_output(OutputPort::Out).unwrap();
 
         let w0 = tap.start();
         let w1 = write_data_1(&mut input_chan_snd, &mut tapcontrol);

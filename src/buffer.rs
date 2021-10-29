@@ -1,4 +1,8 @@
 // use pipeawesome2::motion::{Pull, MotionResult, IOData};
+use crate::connectable::OutputPort;
+use crate::connectable::ConnectableAddOutputError;
+use crate::connectable::ConnectableAddInputError;
+use crate::connectable::Connectable;
 use async_std::{channel::SendError, prelude::*};
 
 use async_std::channel::{bounded, unbounded, Receiver, Sender };
@@ -20,6 +24,30 @@ pub struct Buffer {
     buffer_size_monitor: Option<Sender<BufferSizeMessage>>,
 }
 
+
+impl Connectable for Buffer {
+
+    fn add_output(&mut self, port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
+        if self.stdout.is_some() { return Err(ConnectableAddOutputError::AlreadyAllocated(port)); }
+        let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
+        self.stdout = Some(Push::IoSender(child_stdout_push_channel));
+        Ok(Pull::Receiver(stdout_io_reciever_channel))
+    }
+
+    fn add_input(&mut self, pull: Pull, unused_priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
+        if unused_priority != 0 {
+            return Err(ConnectableAddInputError::UnsupportedPriority(unused_priority));
+        }
+        if self.stdin.is_some() {
+            return Err(ConnectableAddInputError::AlreadyAllocated);
+        }
+        self.stdin = Some(pull);
+        Ok(())
+    }
+
+}
+
+
 #[allow(clippy::new_without_default)]
 impl Buffer {
     pub fn new() -> Buffer {
@@ -40,18 +68,6 @@ impl Buffer {
 
     pub fn set_stdout_size(&mut self, size: usize) {
         self.stdout_size = size;
-    }
-
-    pub fn add_stdin(&mut self, pull: Pull) {
-        assert!(self.stdin.is_none());
-        self.stdin = Some(pull);
-    }
-
-    pub fn add_stdout(&mut self) -> Pull {
-        assert!(self.stdout.is_none());
-        let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout = Some(Push::IoSender(child_stdout_push_channel));
-        Pull::Receiver(stdout_io_reciever_channel)
     }
 
 }
@@ -198,8 +214,8 @@ pub async fn test_buffer_impl() -> MotionResult<usize>  {
     let input = Pull::Mock(get_input());
     let mut buffer = Buffer::new();
     buffer.set_stdout_size(1);
-    buffer.add_stdin(input);
-    let output = buffer.add_stdout();
+    buffer.add_input(input, 0);
+    let output = buffer.add_output(OutputPort::Out).unwrap();
     let monitoring = buffer.add_buffer_size_monitor();
     let buffer_motion = buffer.start();
     match buffer_motion.join(read_data(output)).join(read_monitoring(monitoring)).await {

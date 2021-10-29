@@ -1,4 +1,8 @@
 // use pipeawesome2::motion::{Pull, MotionResult, IOData};
+use crate::connectable::ConnectableAddInputError;
+use crate::connectable::ConnectableAddOutputError;
+use crate::connectable::OutputPort;
+use crate::connectable::Connectable;
 use std::ffi::OsStr;
 use async_std::{channel::Sender, prelude::*};
 use std::path::Path;
@@ -7,6 +11,7 @@ use crate::motion::{IOData, MotionError, MotionNotifications, ReadSplitControl};
 use async_std::process as aip;
 use async_std::channel::bounded;
 use super::motion::{ motion, MotionResult, Pull, Push, };
+
 
 pub struct Launch<E, P, O, A, K, V, R>
     where E: IntoIterator<Item = (K, V)>,
@@ -27,6 +32,62 @@ pub struct Launch<E, P, O, A, K, V, R>
     stdin: Option<Pull>,
     launched: bool,
 }
+
+
+impl <E: IntoIterator<Item = (K, V)>,
+          P: AsRef<Path>,
+          O: AsRef<OsStr>,
+          A: IntoIterator<Item = R>,
+          K: AsRef<OsStr>,
+          V: AsRef<OsStr>,
+          R: AsRef<OsStr>,
+          > Connectable for Launch<E, P, O, A, K, V, R> {
+
+    fn add_output(&mut self, port: OutputPort) -> Result<Pull, ConnectableAddOutputError> {
+        match port {
+            OutputPort::Err => {
+                if self.stderr.is_some() {
+                    return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Err));
+                }
+                let (child_stdout_push_channel, chan_rx) = bounded(1);
+                self.stderr = Some(Push::IoSender(child_stdout_push_channel));
+                Ok(Pull::Receiver(chan_rx))
+            },
+            OutputPort::Exit => {
+                if self.exit_status.is_some() {
+                    return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Exit));
+                }
+                let (child_exit_status_push_channel, chan_rx) = bounded(1);
+                self.exit_status = Some(child_exit_status_push_channel);
+                Ok(Pull::Receiver(chan_rx))
+            },
+            OutputPort::Out => {
+                if self.stdout.is_some() {
+                    return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Out));
+                }
+                let (child_stdout_push_channel, chan_rx) = bounded(1);
+                self.stdout = Some(Push::IoSender(child_stdout_push_channel));
+                Ok(Pull::Receiver(chan_rx))
+            },
+            x => Err(ConnectableAddOutputError::UnsupportedPort(x))
+        }
+    }
+
+
+    fn add_input(&mut self, pull: Pull, unused_priority: isize) -> Result<(), ConnectableAddInputError> {
+        if unused_priority != 0 {
+            return Err(ConnectableAddInputError::UnsupportedPriority(unused_priority));
+        }
+        if self.stdin.is_some() {
+            return Err(ConnectableAddInputError::AlreadyAllocated);
+        }
+        self.stdin = Some(pull);
+        Ok(())
+    }
+
+}
+
+
 
 #[allow(clippy::new_without_default)]
 impl <E: IntoIterator<Item = (K, V)>,
@@ -54,31 +115,6 @@ impl <E: IntoIterator<Item = (K, V)>,
             env,
             args
         }
-    }
-
-    pub fn add_stdin(&mut self, pull: Pull) {
-        self.stdin = Some(pull);
-    }
-
-    pub fn add_stdout(&mut self) -> Pull {
-        assert!(self.stdout.is_none());
-        let (child_stdout_push_channel, chan_rx) = bounded(1);
-        self.stdout = Some(Push::IoSender(child_stdout_push_channel));
-        Pull::Receiver(chan_rx)
-    }
-
-    pub fn add_stderr(&mut self) -> Pull {
-        assert!(self.stderr.is_none());
-        let (child_stdout_push_channel, chan_rx) = bounded(1);
-        self.stderr = Some(Push::IoSender(child_stdout_push_channel));
-        Pull::Receiver(chan_rx)
-    }
-
-    pub fn add_exit_status(&mut self) -> Pull {
-        assert!(self.exit_status.is_none());
-        let (child_exit_status_push_channel, chan_rx) = bounded(1);
-        self.exit_status = Some(child_exit_status_push_channel);
-        Pull::Receiver(chan_rx)
     }
 
     fn environment_configure(&mut self, child_builder: &mut aip::Command) {

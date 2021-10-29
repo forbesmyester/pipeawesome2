@@ -3,17 +3,9 @@ use std::collections::HashMap;
 
 use peg::{error::ParseError, str::LineCol};
 use serde::{Deserialize, Serialize};
+use crate::connectable::OutputPort;
 
-#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum OutputPort {
-    Err,
-    Out,
-    Exit,
-    Size
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Deserialize, Serialize, Hash, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ComponentType {
     Faucet,
@@ -27,14 +19,12 @@ pub enum ComponentType {
 impl std::fmt::Display for ComponentType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?}", self)
-        // or, alternatively:
-        // fmt::Debug::fmt(self, f)
     }
 }
 
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
-struct LaunchConfig {
+pub struct LaunchConfig {
     command: Option<String>,
     #[serde(default)]
     path: Option<String>,
@@ -94,20 +84,20 @@ pub enum DeserializedConnection {
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct FlowConfig {
     #[serde(default = "HashMap::new")]
-    faucet: HashMap<String, FaucetConfig>,
+    pub faucet: HashMap<String, FaucetConfig>,
     #[serde(default = "HashMap::new")]
-    launch: HashMap<String, LaunchConfig>,
+    pub launch: HashMap<String, LaunchConfig>,
     #[serde(default = "HashMap::new")]
-    connection: HashMap<String, DeserializedConnection>,
+    pub connection: HashMap<String, DeserializedConnection>,
 }
 
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct ExecutionConfig {
     #[serde(default = "HashMap::new")]
-    faucet: HashMap<String, String>,
+    pub faucet: HashMap<String, String>,
     #[serde(default = "HashMap::new")]
-    drain: HashMap<String, String>,
+    pub drain: HashMap<String, String>,
 }
 
 impl ExecutionConfig {
@@ -148,13 +138,45 @@ impl Default for FlowConfig {
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct Config {
     #[serde(default = "ExecutionConfig::new")]
-    execution: ExecutionConfig,
+    pub execution: ExecutionConfig,
     #[serde(default = "FlowConfig::new")]
-    flow: FlowConfig,
+    pub flow: FlowConfig,
 }
 
 
+pub enum ConfigLintWarning {
+    InConfigButMissingFlowConnection { config_section: String, component_type: ComponentType, component_name: String },
+    InFlowConnectionButMissingConfig { component_type: ComponentType, component_name: String },
+    InvalidConnection { id: String, join: String },
+}
+
+impl ToString for ConfigLintWarning {
+    fn to_string(&self) -> std::string::String {
+        match self {
+            ConfigLintWarning::InConfigButMissingFlowConnection { config_section, component_type, component_name } => {
+                format!(
+                    "There is configuration for {}:{} in {}, but this is not referenced in the connections",
+                    component_type,
+                    component_name,
+                    config_section
+                )
+            },
+            ConfigLintWarning::InFlowConnectionButMissingConfig { component_type, component_name } => {
+                format!(
+                    "A {}:{} is referenced in the flow connections, but is missing required configuration",
+                    component_type,
+                    component_name,
+                )
+            },
+            ConfigLintWarning::InvalidConnection { id, join } => {
+                format!("The connection {} which is {} could not be converted", id, join)
+            },
+        }
+    }
+}
+
 impl Config {
+
     pub fn faucet_set_watermark(mut config: Config, faucet_id: String, min: usize, max: usize) -> Config {
         let mut faucet_config = match min > max {
             true => FaucetConfig { min_buffered: max, max_buffered: min },
@@ -193,7 +215,7 @@ impl Config {
             .or_insert(LaunchConfig { command: Some(command), path: None, env: HashMap::new(), arg: vec![] });
         config
     }
- pub fn launch_set_path(mut config: Config, launch_id: String, path: String) -> Config {
+    pub fn launch_set_path(mut config: Config, launch_id: String, path: String) -> Config {
         config.flow.launch.entry(launch_id)
             .and_modify(|mut lc| lc.path = Some(path.clone()))
             .or_insert(LaunchConfig { command: None, path: Some(path), env: HashMap::new(), arg: vec![] });
@@ -214,48 +236,86 @@ impl Config {
         config
     }
 
-    // TODO: Rewrite this because we shouldn't need ownership, so this is pure laziness!
-    pub fn lint(mut config: Config) -> Vec<String> {
-        use std::iter::FromIterator;
+    pub fn connections_mapper<'a>((k, v): (&'a String, &'a String)) -> Result<Vec<Connection>,(&'a str, &'a str)> {
 
-        let mut r: Vec<String> = vec![];
-
-        let registered: HashMap<String, HashSet<String>> = HashMap::<_, _>::from_iter([
-            ("execution.faucet".to_string(), config.execution.faucet.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()),
-            ("execution.drain".to_string(), config.execution.drain.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()),
-            ("flow.faucet".to_string(), config.flow.faucet.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()),
-            ("flow.launch".to_string(), config.flow.launch.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()),
-        ]);
-
-        fn mapper(kv: (std::string::String, DeserializedConnection)) -> (String, Result<Vec<Connection>, String>) {
-            let v = match kv.1 {
-                DeserializedConnection::JoinString(s) => match load_connection_from_string(&s) {
-                    Err(_) => Err(format!("Could not parse connection {} ({})", kv.0, s)),
-                    Ok(x) => Ok(x)
-                },
-                DeserializedConnection::Connections(x) => Ok(x),
-            };
-            (kv.0, v)
+        match load_connection_from_string(v) {
+            Err(_) => Err((k, v)),
+            Ok(x) => Ok(x),
         }
 
-        let connections_as_vec = std::mem::take(&mut config.flow.connection).into_iter()
-            .map(mapper)
-            .filter_map(|(k, v)| {
-                match v {
-                    Ok(vv) => Some((k, vv)),
-                    Err(s) => {
-                        r.push(s);
-                        None
-                    }
-                }
-            })
-            .collect::<HashMap<String, Vec<Connection>>>();
+    }
 
-        let known_components: HashSet<(&ComponentType, &str)> = connections_as_vec.iter()
+    pub fn convert_connections(connections: &mut HashMap<String, DeserializedConnection>) -> Vec<ConfigLintWarning> {
+
+        let mut errs: Vec<ConfigLintWarning> = vec![];
+
+        connections.iter_mut()
+            .filter_map(
+                |(k, v)| {
+                    let replace_with = match v {
+                        DeserializedConnection::JoinString(s) => {
+                            match Config::connections_mapper((k, s)) {
+                                Ok(x) => Some(x),
+                                Err((kk, vv)) => {
+                                    return Some(ConfigLintWarning::InvalidConnection { id: kk.to_string(), join: vv.to_string() });
+                                }
+                            }
+                        },
+                        DeserializedConnection::Connections(x) => None
+                    };
+                    if let Some(x) = replace_with {
+                        let mut d = DeserializedConnection::Connections(x);
+                        std::mem::swap(v, &mut d);
+                    };
+                    None
+                })
+            .collect()
+
+    }
+
+    pub fn lint(config: &mut Config) -> Vec<ConfigLintWarning> {
+        use std::iter::FromIterator;
+
+        let mut errs = Config::convert_connections(&mut config.flow.connection);
+        if !errs.is_empty() {
+            return errs;
+        }
+
+        fn string_to_component_type(s: &str) -> ComponentType {
+            if let Some((_, ct)) = s.split_once(".") {
+                return match ct {
+                    "faucet" => ComponentType::Faucet,
+                    "drain" => ComponentType::Drain,
+                    "launch" => ComponentType::Launch,
+                    _ => panic!("string_to_component_type for string {}", s)
+                }
+            }
+            panic!("string_to_component_type for string {}", s);
+        }
+
+        let registered: HashMap<String, HashSet<String>> = HashMap::<_, _>::from_iter([
+            ("execution.faucet".to_string(), config.execution.faucet.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // recommended (where to read)
+            ("execution.drain".to_string(), config.execution.drain.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // recommended (where to output)
+            ("flow.faucet".to_string(), config.flow.faucet.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // optional (min/max buffered)
+            ("flow.launch".to_string(), config.flow.launch.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // required (how to launch the programs)
+        ]);
+
+        fn quick_conv(ds: &DeserializedConnection) -> Vec<&Connection> {
+            match ds {
+                DeserializedConnection::Connections(cs) => {
+                    let mut v = vec![];
+                    for c in cs { v.push(c); }
+                    v
+                },
+                DeserializedConnection::JoinString(s) => vec![],
+            }
+        }
+
+        let known_components: HashSet<(&ComponentType, &str)> = config.flow.connection.iter()
             .fold(
                 HashSet::new(),
-                |mut acc, (_, v_conn)| {
-                    for conn in v_conn {
+                |mut acc, (_, deserialized_connection)| {
+                    for conn in quick_conv(deserialized_connection) {
                         let cn = match conn {
                             Connection::EndConnection { component_type, component_name, .. } => (component_type, component_name),
                             Connection::MiddleConnection { component_type, component_name, .. } => (component_type, component_name),
@@ -267,13 +327,20 @@ impl Config {
                 }
             );
 
-        r.append(
+        // If something is registered, but does not have a corresponding connection... what do we care?
+        errs.append(
             registered.iter().fold(
                 &mut Vec::new(),
                 |acc, (reg_key, reg_controls)| {
-                    let mut to_add: Vec<String> = reg_controls.iter()
+                    let mut to_add: Vec<ConfigLintWarning> = reg_controls.iter()
                         .filter(|reg_control| !known_components.contains(&(&ComponentType::Faucet, reg_control as &str)))
-                        .map(|reg_control| format!("Config was expecting a {} called {}, but none exists", reg_key, reg_control))
+                        .map(|reg_control| {
+                            ConfigLintWarning::InConfigButMissingFlowConnection {
+                                component_type: string_to_component_type(reg_key),
+                                component_name: reg_control.to_owned(),
+                                config_section: reg_key.to_owned(),
+                            }
+                        })
                         .collect();
                     acc.append(&mut to_add);
                     acc
@@ -289,7 +356,8 @@ impl Config {
             }).is_none()
         }
 
-        r.append(
+        // This is what we care about!
+        errs.append(
                 known_components.iter().fold(
                 &mut Vec::new(),
                 |acc, (component_type, component_name)| {
@@ -299,29 +367,26 @@ impl Config {
                         },
                         ComponentType::Drain => {
                             exists_with_flow_config(&registered, "execution.drain", *component_name)
-                            // registered.get("execution.faucet").and_then(|hs| {
-                            //     if hs.contains(*component_name) { return Some(true); }
-                            //     None
-                            // }).is_none()
                         },
                         ComponentType::Faucet => {
-                            exists_with_flow_config(&registered, "execution.drain", *component_name)
+                            exists_with_flow_config(&registered, "execution.faucet", *component_name)
                         },
                         _ => false,
                     };
                     if in_connections_but_missing_reqd_config {
-                        acc.push(format!(
-                            "Connections references a {}:{} but it is missing required settings",
-                            component_type,
-                            component_name
-                        ));
+                        acc.push(
+                            ConfigLintWarning::InFlowConnectionButMissingConfig {
+                                component_type: **component_type,
+                                component_name: component_name.to_owned().to_string()
+                            }
+                        );
                     }
                     acc
                 }
             )
         );
 
-        r
+        errs
     }
 
     pub fn new() -> Config {
@@ -340,6 +405,8 @@ impl Default for Config {
 
 #[test]
 fn config_serde() {
+
+    use std::iter::FromIterator;
 
     assert_eq!(
         serde_json::from_str::<FlowConfig>(r#"{"connection": {"a": "faucet[O] | [3]drain"}}"#).unwrap(),

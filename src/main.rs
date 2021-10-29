@@ -1,4 +1,19 @@
+use pipeawesome2::motion::Push;
+use pipeawesome2::drain::Drain;
+use pipeawesome2::waiter::JoinTo;
+use pipeawesome2::waiter::JoinFrom;
+use pipeawesome2::motion::Pull;
+use pipeawesome2::faucet::Faucet;
+use pipeawesome2::motion::ReadSplitControl;
+use pipeawesome2::config::InputPort;
+use pipeawesome2::config::ComponentType;
+use std::collections::HashSet;
+use pipeawesome2::waiter::Waiter;
+use pipeawesome2::buffer::Buffer;
+use pipeawesome2::connectable::{ Connectable, OutputPort };
+use pipeawesome2::launch::Launch;
 use pipeawesome2::config::Connection;
+use pipeawesome2::config::ConfigLintWarning;
 use pipeawesome2::config::DeserializedConnection;
 use pipeawesome2::config::load_connection_from_string;
 use pipeawesome2::config::Config;
@@ -155,8 +170,13 @@ fn get_clap_app() -> App<'static, 'static> {
         .about("Like UNIX pipes, but on sterroids")
 
         .subcommand(
+            SubCommand::with_name("process")
+                .arg(get_required_arg_with("config", "The config file to read, \"-\" for STDIN. If not specified it will be blank", "FILENAME"))
+        )
+
+        .subcommand(
             SubCommand::with_name("config")
-                .arg(get_required_arg_with("config-in", "The config file to read, \"-\" for STDIN. If not specified it will be blank", "FILENAME"))
+                .arg(get_required_arg_with("config", "The config file to read, \"-\" for STDIN. If not specified it will be blank", "FILENAME"))
                 .arg(get_required_arg_with("config-out", "The config file to write, \"-\" for STDOUT. Defaults to the file being read (otherwise STDOUT)", "FILENAME"))
                 .subcommand(
                     SubCommand::with_name("empty")
@@ -188,7 +208,7 @@ fn get_clap_app() -> App<'static, 'static> {
                         .arg(get_required_arg_with("id", "The ID of the drain to modify", "ID"))
                         .subcommand(
                             SubCommand::with_name("destination")
-                                .arg(get_required_index_arg("DESTINATION", "DESTINATION must be either a filename, \"-\" for STDIN, \"_\" for STDOUT or empty for NULL output", 1))
+                                .arg(get_required_index_arg("DESTINATION", "DESTINATION must be either a filename, \"-\" for STDOUT, \"_\" for STDERR or empty for NULL output", 1))
                         )
                 )
 
@@ -237,7 +257,7 @@ struct UserConfigOptionBase {
 }
 
 #[derive(Debug)]
-enum UserConfigAction {
+enum UserRequest {
     LaunchCommand {
         base_options: UserConfigOptionBase,
         command: String,
@@ -271,9 +291,8 @@ enum UserConfigAction {
         base_options: UserConfigOptionBase,
         join: String,
     },
-    ConfigLintShow {
-        config_in: String,
-    },
+    ConfigLintShow { config_in: String, },
+    Process { config_in: String, },
 }
 
 
@@ -291,7 +310,7 @@ pub fn convert_to_deserialized_connection(s: String) -> Result<DeserializedConne
 }
 
 
-fn get_user_config_action(matches: &ArgMatches) -> Result<UserConfigAction, String> {
+fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
 
     #[derive(Debug)]
     struct CollectedSubcommands<'a> {
@@ -318,7 +337,7 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserConfigAction, Stri
     fn get_standard_config_opts<'a>(first_sub_command: Option<&'a ArgMatches>, second_sub_command: Option<&'a ArgMatches>, second_name: Option<&str>) -> Result<UserConfigOptionBase, String> {
 
 
-        let first = first_sub_command.map(|sc1| sc1.value_of("config-in").or(Some("-"))).flatten();
+        let first = first_sub_command.map(|sc1| sc1.value_of("config").or(Some("-"))).flatten();
 
         let standard_options = (
             first,
@@ -346,7 +365,11 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserConfigAction, Stri
     }
 
 
-    fn get_user_action(collected_subcommands: CollectedSubcommands) -> Result<UserConfigAction, String> {
+    fn get_user_action(collected_subcommands: CollectedSubcommands) -> Result<UserRequest, String> {
+
+        fn get_config_in(first_sub_command: Option<&clap::ArgMatches>) -> String {
+            first_sub_command.map(|sc1| sc1.value_of("config")).flatten().unwrap_or("-").to_string()
+        }
 
         let first_sub_command = collected_subcommands.subcommands.iter().map(|x| x.0).next();
 
@@ -360,27 +383,28 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserConfigAction, Stri
         let last_sub_command: Option<&ArgMatches> = collected_subcommands.subcommands.iter().map(|x| x.0).last();
 
         match (base_options, &coll_subcomm_str[..]) {
+            (_, ["process"]) => {
+                Ok(UserRequest::Process { config_in: get_config_in(first_sub_command) })
+            },
             (_, ["config", "lint"]) => {
-                Ok(UserConfigAction::ConfigLintShow {
-                    config_in: first_sub_command.map(|sc1| sc1.value_of("config-in")).flatten().unwrap_or("-").to_string()
-                })
+                Ok(UserRequest::ConfigLintShow { config_in: get_config_in(first_sub_command) })
             },
             (Ok(base_options), ["config", "connection", "join"]) => {
                 last_sub_command
                     .map(|lsc| lsc.value_of("JOIN")).flatten()
-                    .map(|join| UserConfigAction::ConnectionJoin { base_options, join: join.to_string() })
+                    .map(|join| UserRequest::ConnectionJoin { base_options, join: join.to_string() })
                     .ok_or_else(|| "Command {:?} did not have all required values".to_string())
             },
             (Ok(base_options), ["config", "drain", "destination"]) => {
                 last_sub_command
                     .map(|lsc| lsc.value_of("DESTINATION")).flatten()
-                    .map(|dst| UserConfigAction::DrainDst { base_options, dst: dst.to_string() })
+                    .map(|dst| UserRequest::DrainDst { base_options, dst: dst.to_string() })
                     .ok_or_else(|| "Command {:?} did not have all required values".to_string())
             },
             (Ok(base_options), ["config", "faucet", "source"]) => {
                 last_sub_command
                     .map(|lsc| lsc.value_of("SOURCE")).flatten()
-                    .map(|src| UserConfigAction::FaucetSrc { base_options, src: src.to_string() })
+                    .map(|src| UserRequest::FaucetSrc { base_options, src: src.to_string() })
                     .ok_or_else(|| "Command {:?} did not have all required values".to_string())
             },
             (Ok(base_options), ["config", "faucet", "watermark"]) => {
@@ -392,19 +416,19 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserConfigAction, Stri
                         )
                     })
                     .map(|tup| option_of_tuples_to_option_tuple((tup.0, tup.1))).flatten()
-                    .map(|tup| UserConfigAction::FaucetWatermark { base_options, min: tup.0, max: tup.1 })
+                    .map(|tup| UserRequest::FaucetWatermark { base_options, min: tup.0, max: tup.1 })
                     .ok_or_else(|| "Command {:?} did not have all required values".to_string())
             },
             (Ok(base_options), ["config", "launch", "command"]) => {
                 last_sub_command
                     .map(|lsc| lsc.value_of("COMMAND")).flatten()
-                    .map(|cmd| UserConfigAction::LaunchCommand { base_options, command: cmd.to_string() })
+                    .map(|cmd| UserRequest::LaunchCommand { base_options, command: cmd.to_string() })
                     .ok_or_else(|| "Command {:?} did not have all required values".to_string())
             },
             (Ok(base_options), ["config", "launch", "path"]) => {
                 last_sub_command
                     .map(|lsc| lsc.value_of("PATH")).flatten()
-                    .map(|path| UserConfigAction::LaunchPath { base_options, path: path.to_string() })
+                    .map(|path| UserRequest::LaunchPath { base_options, path: path.to_string() })
                     .ok_or_else(|| "Command {:?} did not have all required values".to_string())
             },
             (Ok(base_options), ["config", "launch", "args"]) => {
@@ -415,7 +439,7 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserConfigAction, Stri
                             Some(xs) => xs.map(|s| s.to_string()).collect()
                         }
                     )
-                    .map(|args| UserConfigAction::LaunchArgs { base_options, args })
+                    .map(|args| UserRequest::LaunchArgs { base_options, args })
                     .ok_or_else(|| "Command {:?} did not have all required values".to_string())
             },
             (Ok(base_options), ["config", "launch", "env"]) => {
@@ -455,7 +479,7 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserConfigAction, Stri
                         )
 
                     })
-                    .map(|env| UserConfigAction::LaunchEnv { base_options, env })
+                    .map(|env| UserRequest::LaunchEnv { base_options, env })
                     .map_err(|_| "Command {:?} did not have all required values".to_string())
 
             },
@@ -480,7 +504,7 @@ fn read_config_as_str(config_in: &str) -> Result<String, String> {
         return Ok(buffer);
     }
 
-    let mut f = std::fs::File::open("config_in").map_err(|_x| format!("We could not open the file '{}' to get the config", config_in))?;
+    let mut f = std::fs::File::open(config_in).map_err(|_x| format!("We could not open the file '{}' to get the config", config_in))?;
     f.read_to_string(&mut buffer).map_err(|_x| format!("We could not open the file '{}' to get the config", config_in))?;
     Ok(buffer)
 }
@@ -501,45 +525,198 @@ fn result_flatten<X>(x: Result<Result<X, String>, String>) -> Result<X, String> 
     }
 }
 
-fn process_user_config_action(result_config: Result<UserConfigAction, String>) -> Result<Config, String> {
+
+enum UserResponse {
+    Config(Config),
+    Process(Config),
+}
+
+
+fn process_user_config_action(result_config: Result<UserRequest, String>) -> Result<UserResponse, String> {
 
     match result_config {
         Err(x) => Err(x),
-        Ok(UserConfigAction::ConnectionJoin { base_options: UserConfigOptionBase { id, config_in, .. }, join, .. }) => {
+        Ok(UserRequest::ConnectionJoin { base_options: UserConfigOptionBase { id, config_in, .. }, join, .. }) => {
             convert_to_deserialized_connection(join).and_then(|dsc|
                 read_config(&config_in).map(|old_config| Config::connection_join(old_config, id, dsc))
+                    .map(UserResponse::Config)
             )
         },
-        Ok(UserConfigAction::FaucetSrc { base_options: UserConfigOptionBase { id, config_in, .. }, src }) => {
+        Ok(UserRequest::FaucetSrc { base_options: UserConfigOptionBase { id, config_in, .. }, src }) => {
             read_config(&config_in).map(|old_config| Config::faucet_set_source(old_config, id, src))
+                .map(UserResponse::Config)
         },
-        Ok(UserConfigAction::DrainDst { base_options: UserConfigOptionBase { id, config_in, .. }, dst }) => {
+        Ok(UserRequest::DrainDst { base_options: UserConfigOptionBase { id, config_in, .. }, dst }) => {
             read_config(&config_in).map(|old_config| Config::drain_set_destination(old_config, id, dst))
+                .map(UserResponse::Config)
         },
-        Ok(UserConfigAction::FaucetWatermark { base_options: UserConfigOptionBase { id, config_in, .. }, min, max }) => {
+        Ok(UserRequest::FaucetWatermark { base_options: UserConfigOptionBase { id, config_in, .. }, min, max }) => {
             read_config(&config_in).map(|old_config| Config::faucet_set_watermark(old_config, id, min, max))
+                .map(UserResponse::Config)
         },
-        Ok(UserConfigAction::LaunchCommand { base_options: UserConfigOptionBase { id, config_in, .. }, command }) => {
+        Ok(UserRequest::LaunchCommand { base_options: UserConfigOptionBase { id, config_in, .. }, command }) => {
             read_config(&config_in).map(|old_config| Config::launch_set_command(old_config, id, command))
+                .map(UserResponse::Config)
         },
-        Ok(UserConfigAction::LaunchPath { base_options: UserConfigOptionBase { id, config_in, .. }, path }) => {
+        Ok(UserRequest::LaunchPath { base_options: UserConfigOptionBase { id, config_in, .. }, path }) => {
             read_config(&config_in).map(|old_config| Config::launch_set_path(old_config, id, path))
+                .map(UserResponse::Config)
         },
-        Ok(UserConfigAction::LaunchArgs { base_options: UserConfigOptionBase { id, config_in, .. }, args }) => {
+        Ok(UserRequest::LaunchArgs { base_options: UserConfigOptionBase { id, config_in, .. }, args }) => {
             read_config(&config_in).map(|old_config| Config::launch_set_args(old_config, id, args))
+                .map(UserResponse::Config)
         },
-        Ok(UserConfigAction::LaunchEnv { base_options: UserConfigOptionBase { id, config_in, .. }, env }) => {
+        Ok(UserRequest::LaunchEnv { base_options: UserConfigOptionBase { id, config_in, .. }, env }) => {
             read_config(&config_in).map(|old_config| Config::launch_set_env(old_config, id, env))
+                .map(UserResponse::Config)
         },
-        Ok(UserConfigAction::ConfigLintShow { config_in }) => {
-            let config = read_config(&config_in)?;
-            let errs = Config::lint(config.clone());
+        Ok(UserRequest::ConfigLintShow { config_in }) => {
+            let mut config = read_config(&config_in)?;
+            let errs = Config::lint(&mut config).into_iter().map(|c| c.to_string()).collect::<Vec<String>>();
             if errs.is_empty() {
-                return Ok(config);
+                return Ok(config).map(UserResponse::Config)
             }
             return Err(format!("We found the following warnings / errors: \n\n * {}\n", errs.join("\n * ")));
         },
+        Ok(UserRequest::Process { config_in }) => {
+            let mut config = read_config(&config_in)?;
+            let errs = Config::lint(&mut config).into_iter()
+                .filter(|lint_err| match lint_err {
+                    ConfigLintWarning::InConfigButMissingFlowConnection { .. } => false,
+                    _ => true,
+                })
+                .map(|c| c.to_string()).collect::<Vec<String>>();
+            if errs.is_empty() {
+                return Ok(config).map(UserResponse::Process);
+            }
+            return Err(format!("Process {}", errs.join("\n * ")));
+        },
     }
+
+}
+
+fn get_waiter(config: Config) -> Result<Waiter, String> {
+
+    let mut created: HashSet<(&ComponentType, &str)> = HashSet::new();
+    let mut last: Option<&Connection> = None;
+
+    let all_connections = config.flow.connection.iter().fold(
+        Vec::new(),
+        |mut acc, (_hash_key, deser_conn)| {
+            if let DeserializedConnection::Connections(v) = deser_conn {
+                acc.extend_from_slice(v);
+                return acc;
+            }
+            panic!("Encountered DeserializedConnection::JoinString in main::get_waiter()")
+        }
+    );
+
+    let mut waiter = Waiter::new();
+
+    struct CreateSpec<'a> {
+        component_type: &'a ComponentType,
+        component_name: &'a String,
+        input_port: Option<&'a InputPort>,
+        output_port: Option<&'a OutputPort>,
+    }
+
+    fn get_create_spec(connection: &Connection) -> CreateSpec {
+        match connection {
+            Connection::MiddleConnection { component_type, component_name, input_port, output_port } => CreateSpec { component_type, component_name, input_port: Some(input_port), output_port: Some(output_port) },
+            Connection::StartConnection { component_type, component_name, output_port } => CreateSpec { component_type, component_name, input_port: None, output_port: Some(output_port) },
+            Connection::EndConnection { component_type, component_name, input_port } => CreateSpec { component_type, component_name, input_port: Some(input_port), output_port: None },
+        }
+    }
+
+    fn convert_connection_to_join_from(connection: &Connection) -> Option<JoinFrom> {
+        match connection {
+            Connection::MiddleConnection { component_type, component_name, output_port, .. } => Some(JoinFrom { component_type: *component_type, component_name: component_name, output_port: *output_port }),
+            Connection::StartConnection { component_type, component_name, output_port } => Some(JoinFrom { component_type: *component_type, component_name: component_name, output_port: *output_port }),
+            Connection::EndConnection { .. } => None,
+        }
+    }
+
+    fn convert_connection_to_join_to(connection: &Connection) -> Option<JoinTo> {
+        match connection {
+            Connection::MiddleConnection { component_type, component_name, input_port: InputPort::In(input_priority), .. } => Some(JoinTo { component_type: *component_type, component_name, input_priority: *input_priority }),
+            Connection::StartConnection { .. } => None,
+            Connection::EndConnection { component_type, component_name, input_port: InputPort::In(input_priority) } => Some(JoinTo { component_type: *component_type, component_name, input_priority: *input_priority })
+        }
+    }
+
+    async fn constructor(create_spec: &CreateSpec<'_>, config: &Config, w: &mut Waiter) -> Result<(), String> {
+
+        // TODO: Do the proper config stuff!
+        match create_spec {
+            CreateSpec { component_type: ComponentType::Faucet, component_name, .. } => {
+                // TODO: Figure out how to get this in...
+                let pull = match config.execution.faucet.get(*component_name).map(|s| s.as_str()).unwrap_or("") {
+                    "-" => Pull::Stdin(async_std::io::stdin(), ReadSplitControl::new()),
+                    "" => Pull::None,
+                    filename => {
+                        // Pull::Stdin(async_std::io::stdin(), ReadSplitControl::new())
+                        let file = async_std::fs::File::open(filename).await.map_err(|_| { format!("Could not open file: {}", filename) })?;
+                        Pull::File(file, ReadSplitControl::new())
+                    },
+                };
+                w.add_faucet(component_name.to_string(), Faucet::new(pull));
+                Ok(())
+            },
+            CreateSpec { component_type: ComponentType::Drain, component_name, .. } => {
+                // TODO: Figure out how to get this in...
+                let push = match config.execution.drain.get(*component_name).map(|s| s.as_str()).unwrap_or("") {
+                    "-" => Push::Stdout(async_std::io::stdout()),
+                    "_" => Push::Stderr(async_std::io::stderr()),
+                    "" => Push::None,
+                    filename => {
+                        println!("AS FILE");
+                        let file = async_std::fs::File::create(filename).await.map_err(|_| { format!("Could not write to file: {}", filename) })?;
+                        Push::File(async_std::io::BufWriter::new(file))
+                    },
+                };
+                w.add_drain(component_name.to_string(), Drain::new(push));
+                Ok(())
+            },
+            _ => {
+                Ok(())
+            }
+        }
+    }
+
+    println!("all_connections: {:?}", all_connections);
+
+
+
+    for connection in all_connections.iter() {
+        let create_spec = get_create_spec(connection);
+        if !created.contains(&(create_spec.component_type, create_spec.component_name)) {
+            println!("CONSTRUCT: {:?}", connection);
+            async_std::task::block_on(constructor(&create_spec, &config, &mut waiter))?;
+            created.insert((create_spec.component_type, create_spec.component_name));
+        } else {
+            println!("NOCONSTRUCT: {:?}", connection);
+        }
+        // TODO: The join!
+
+        if let Some(last_connection) = last {
+            println!("CONNECT: {:?} -> {:?}", last_connection, connection);
+            let err = match (convert_connection_to_join_from(last_connection), convert_connection_to_join_to(connection)) {
+                (Some(join_component_from), Some(join_component_to)) => {
+                    waiter.join(join_component_from, join_component_to).map_err(|c| format!("{}", c))
+                },
+                _ => Err(format!("There should have been a connection between {:?} and {:?}", last_connection, connection))
+            };
+            if let Err(err_msg) = err {
+                return Err(err_msg);
+            }
+        }
+        last = Some(connection);
+        if let Connection::EndConnection { .. } = connection {
+            last = None;
+        }
+    }
+
+    Ok(waiter)
 
 }
 
@@ -548,20 +725,46 @@ fn main() {
     let app = get_clap_app();
     let matches = app.get_matches();
 
-    let new_config = process_user_config_action(get_user_config_action(&matches));
+    let user_action = get_user_config_action(&matches);
+    let new_config = process_user_config_action(user_action);
 
+    //    let mut launch_line_numbers: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+    //        None,
+    //        None,
+    //        "mawk".to_string(),
+    //        Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ printf("%04d %s\n", NR, $0) }"#.to_string()])
+    //    );
+    //
+    //    let mut buffer = Buffer::new();
+    //
+    //    let _r = launch_line_numbers.add_input(buffer.add_output(OutputPort::Out).unwrap(), 0);
 
+    let r = match new_config {
+        Ok(UserResponse::Config(new_cfg)) => {
+            serde_json::to_string(&new_cfg).map_err(|_x| "Could not serialize new Config".to_string())
+        },
+        Ok(UserResponse::Process(new_config)) => {
+            match get_waiter(new_config) {
+                Ok(mut waiter) => {
+                    async_std::task::block_on(waiter.start())
+                        .map_err(|err| format!("{:?}", err))
+                        .map(|_processed_count| "".to_string())
+                }
+                Err(x) => Err(x),
+            }
+        },
+        Err(msg) => Err(msg)
+    };
 
-    match result_flatten(new_config.map(|new_cfg| serde_json::to_string(&new_cfg).map_err(|_x| "Could not serialize new Config".to_string()))) {
-        Err(msg) => {
-            eprintln!("{}", msg);
+    match r {
+        Ok(s) => {
+            if !s.is_empty() { println!("{}", s); }
+        }
+        Err(s) => {
+            eprintln!("{}", s);
             std::process::exit(1);
         }
-        Ok(json) => {
-            println!("{}", json);
-        }
     }
-
 
 }
 

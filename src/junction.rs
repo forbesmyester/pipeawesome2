@@ -1,3 +1,7 @@
+use crate::connectable::ConnectableAddInputError;
+use crate::connectable::ConnectableAddOutputError;
+use crate::connectable::OutputPort;
+use crate::connectable::Connectable;
 use async_std::channel::bounded;
 use crate::motion::{IOData, motion_close};
 use crate::utils::{ remove_vec_vec, remove_vec_vec_index };
@@ -12,6 +16,7 @@ pub struct Junction {
     started: bool,
     stdout: Vec<Push>,
     stdin: Vec<Vec<Pull>>,
+    inputs: Vec<(Pull, isize)>,
 }
 
 #[allow(clippy::new_without_default)]
@@ -22,38 +27,42 @@ impl Junction {
             started: false,
             stdin: vec![],
             stdout: vec![],
+            inputs: vec![],
         }
     }
+
 
     pub fn set_stdout_size(&mut self, size: usize) {
         self.stdout_size = size;
     }
 
-    pub fn add_stdin(&mut self, pull: Pull, break_point: bool) {
-        assert!(!self.started);
-        if break_point {
-            self.stdin.push(vec![pull]);
-            return;
-        }
-        if self.stdin.is_empty() {
-            self.stdin.push(vec![])
-        }
-        if let Some(v) = self.stdin.last_mut() {
-            v.push(pull);
+
+    pub fn initialize_stdin(&mut self) {
+        self.inputs.sort_by(|(_, a), (_, b)| {
+            a.cmp(b)
+        });
+
+        let mut old_priority = 0;
+        for (pull, priority) in std::mem::take(&mut self.inputs) {
+            if self.stdin.is_empty() {
+                old_priority = priority;
+                self.stdin.push(vec![])
+            }
+            if priority > old_priority {
+                self.stdin.push(vec![])
+            }
+            if let Some(v) = self.stdin.last_mut() {
+                v.push(pull);
+            }
         }
     }
 
-    pub fn add_stdout(&mut self) -> Pull {
-        assert!(!self.started);
-        let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout.push(Push::IoSender(child_stdout_push_channel));
-        Pull::Receiver(stdout_io_reciever_channel)
-    }
 
     async fn iteration(&mut self, notifications: &mut MotionNotifications, back_off: &mut BackOff) -> MotionResult<(bool, usize)> {
         let mut finished = vec![];
         let mut any_read = false;
         let mut read_count = 0;
+
         for (si_index, mut si) in self.stdin.iter_mut().enumerate() {
             let motion_one_results = crate::motion::motion_one(
                 &mut si,
@@ -70,9 +79,11 @@ impl Junction {
                 break;
             }
         }
+
         for (fin_0, fin_1) in finished.iter().rev() {
             remove_vec_vec_index(&mut self.stdin, *fin_0, *fin_1);
         }
+
         remove_vec_vec(&mut self.stdin);
         if self.stdin.is_empty() {
             for out in self.stdout.iter_mut() {
@@ -89,12 +100,31 @@ impl Junction {
 
 }
 
+
+impl Connectable for Junction {
+
+    fn add_output(&mut self, port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
+        let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
+        self.stdout.push(Push::IoSender(child_stdout_push_channel));
+        Ok(Pull::Receiver(stdout_io_reciever_channel))
+    }
+
+    fn add_input(&mut self, pull: Pull, priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
+        self.inputs.push((pull, priority));
+        Ok(())
+    }
+
+}
+
+
 #[async_trait]
 impl StartableControl for Junction {
 
     async fn start(&mut self) -> MotionResult<usize> {
         assert!(!self.started);
         self.started = true;
+
+        self.initialize_stdin();
 
         let mut back_off = BackOff::new();
         let mut read_count = 0;
@@ -112,6 +142,7 @@ impl StartableControl for Junction {
 
     }
 }
+
 
 pub async fn test_junction_impl() -> MotionResult<usize>  {
 
@@ -150,11 +181,12 @@ pub async fn test_junction_impl() -> MotionResult<usize>  {
 
     let mut junction = Junction::new();
     junction.set_stdout_size(8);
-    junction.add_stdin(pull_0_0, false);
-    junction.add_stdin(pull_0_1, false);
-    junction.add_stdin(pull_1_0, true);
-    let mut output_1 = junction.add_stdout();
-    let mut output_2 = junction.add_stdout();
+    junction.add_input(pull_0_0, 0);
+    junction.add_input(pull_0_1, 0);
+    junction.add_input(pull_1_0, 1);
+    junction.initialize_stdin();
+    let mut output_1 = junction.add_output(OutputPort::Out).unwrap();
+    let mut output_2 = junction.add_output(OutputPort::Out).unwrap();
 
     let mut back_off = BackOff::new();
     let mut notifications = MotionNotifications::empty();
