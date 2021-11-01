@@ -3,7 +3,6 @@ pub mod types;
 pub mod launch;
 pub mod buffer;
 pub mod junction;
-pub mod monitor;
 pub mod faucet;
 pub mod drain;
 pub mod waiter;

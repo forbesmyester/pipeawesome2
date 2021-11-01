@@ -1,3 +1,5 @@
+use pipeawesome2::config::FaucetConfig;
+use pipeawesome2::junction::Junction;
 use pipeawesome2::motion::Push;
 use pipeawesome2::drain::Drain;
 use pipeawesome2::waiter::JoinTo;
@@ -595,7 +597,7 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
 
 }
 
-fn get_waiter(config: Config) -> Result<Waiter, String> {
+fn get_waiter(mut config: Config) -> Result<Waiter, String> {
 
     let mut created: HashSet<(&ComponentType, &str)> = HashSet::new();
     let mut last: Option<&Connection> = None;
@@ -644,9 +646,8 @@ fn get_waiter(config: Config) -> Result<Waiter, String> {
         }
     }
 
-    async fn constructor(create_spec: &CreateSpec<'_>, config: &Config, w: &mut Waiter) -> Result<(), String> {
+    async fn constructor(create_spec: &CreateSpec<'_>, config: &mut Config, w: &mut Waiter) -> Result<(), String> {
 
-        // TODO: Do the proper config stuff!
         match create_spec {
             CreateSpec { component_type: ComponentType::Faucet, component_name, .. } => {
                 // TODO: Figure out how to get this in...
@@ -659,7 +660,8 @@ fn get_waiter(config: Config) -> Result<Waiter, String> {
                         Pull::File(file, ReadSplitControl::new())
                     },
                 };
-                w.add_faucet(component_name.to_string(), Faucet::new(pull));
+                let faucet = Faucet::new(pull);
+                w.add_faucet(component_name.to_string(), faucet);
                 Ok(())
             },
             CreateSpec { component_type: ComponentType::Drain, component_name, .. } => {
@@ -669,7 +671,6 @@ fn get_waiter(config: Config) -> Result<Waiter, String> {
                     "_" => Push::Stderr(async_std::io::stderr()),
                     "" => Push::None,
                     filename => {
-                        println!("AS FILE");
                         let file = async_std::fs::File::create(filename).await.map_err(|_| { format!("Could not write to file: {}", filename) })?;
                         Push::File(async_std::io::BufWriter::new(file))
                     },
@@ -677,29 +678,46 @@ fn get_waiter(config: Config) -> Result<Waiter, String> {
                 w.add_drain(component_name.to_string(), Drain::new(push));
                 Ok(())
             },
+            CreateSpec { component_type: ComponentType::Buffer, component_name, .. } => {
+                w.add_buffer(component_name.to_string(), Buffer::new());
+                Ok(())
+            },
+            CreateSpec { component_type: ComponentType::Junction, component_name, .. } => {
+                w.add_junction(component_name.to_string(), Junction::new());
+                Ok(())
+            },
+            CreateSpec { component_type: ComponentType::Launch, component_name, .. } => {
+                if let Some(cfg) = config.flow.launch.remove(*component_name) {
+                    if cfg.command.is_none() {
+                        return Err(format!("Launch '{}' did not have a command specified", component_name));
+                    }
+                    let launch: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+                        if cfg.env.is_empty() { None } else { Some(cfg.env) },
+                        cfg.path,
+                        cfg.command.ok_or(format!("Launch '{}' did not have a command specified", component_name))?,
+                        if cfg.arg.is_empty() { None } else { Some(cfg.arg) }
+                    );
+                    w.add_launch(component_name.to_string(), launch);
+                    return Ok(());
+                }
+                Err(format!("Could not find configuration for Launch {}", component_name))
+            }
             _ => {
                 Ok(())
             }
         }
     }
 
-    println!("all_connections: {:?}", all_connections);
-
-
 
     for connection in all_connections.iter() {
         let create_spec = get_create_spec(connection);
+
         if !created.contains(&(create_spec.component_type, create_spec.component_name)) {
-            println!("CONSTRUCT: {:?}", connection);
-            async_std::task::block_on(constructor(&create_spec, &config, &mut waiter))?;
+            async_std::task::block_on(constructor(&create_spec, &mut config, &mut waiter))?;
             created.insert((create_spec.component_type, create_spec.component_name));
-        } else {
-            println!("NOCONSTRUCT: {:?}", connection);
         }
-        // TODO: The join!
 
         if let Some(last_connection) = last {
-            println!("CONNECT: {:?} -> {:?}", last_connection, connection);
             let err = match (convert_connection_to_join_from(last_connection), convert_connection_to_join_to(connection)) {
                 (Some(join_component_from), Some(join_component_to)) => {
                     waiter.join(join_component_from, join_component_to).map_err(|c| format!("{}", c))
@@ -710,10 +728,15 @@ fn get_waiter(config: Config) -> Result<Waiter, String> {
                 return Err(err_msg);
             }
         }
+
         last = Some(connection);
         if let Connection::EndConnection { .. } = connection {
             last = None;
         }
+    }
+
+    for (faucet_name, FaucetConfig { monitored_buffers, min_buffered, max_buffered }) in config.flow.faucet.into_iter() {
+        waiter.configure_faucet(faucet_name, monitored_buffers, min_buffered, max_buffered);
     }
 
     Ok(waiter)

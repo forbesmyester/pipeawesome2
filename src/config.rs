@@ -25,20 +25,21 @@ impl std::fmt::Display for ComponentType {
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct LaunchConfig {
-    command: Option<String>,
+    pub command: Option<String>,
     #[serde(default)]
-    path: Option<String>,
+    pub path: Option<String>,
     #[serde(default = "HashMap::new")]
-    env: HashMap<String, String>,
+    pub env: HashMap<String, String>,
     #[serde(default = "Vec::new")]
-    arg: Vec<String>,
+    pub arg: Vec<String>,
 }
 
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct FaucetConfig {
-    min_buffered: usize,
-    max_buffered: usize,
+    pub min_buffered: usize,
+    pub max_buffered: usize,
+    pub monitored_buffers: Vec<String>,
 }
 
 
@@ -135,7 +136,7 @@ impl Default for FlowConfig {
 }
 
 
-#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct Config {
     #[serde(default = "ExecutionConfig::new")]
     pub execution: ExecutionConfig,
@@ -144,6 +145,7 @@ pub struct Config {
 }
 
 
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, Hash)]
 pub enum ConfigLintWarning {
     InConfigButMissingFlowConnection { config_section: String, component_type: ComponentType, component_name: String },
     InFlowConnectionButMissingConfig { component_type: ComponentType, component_name: String },
@@ -179,8 +181,8 @@ impl Config {
 
     pub fn faucet_set_watermark(mut config: Config, faucet_id: String, min: usize, max: usize) -> Config {
         let mut faucet_config = match min > max {
-            true => FaucetConfig { min_buffered: max, max_buffered: min },
-            false => FaucetConfig { min_buffered: min, max_buffered: max },
+            true => FaucetConfig { min_buffered: max, max_buffered: min, monitored_buffers: vec![] },
+            false => FaucetConfig { min_buffered: min, max_buffered: max, monitored_buffers: vec![] },
         };
         config.flow.faucet.entry(faucet_id)
             .and_modify(|x| std::mem::swap(x, &mut faucet_config))
@@ -245,7 +247,7 @@ impl Config {
 
     }
 
-    pub fn convert_connections(connections: &mut HashMap<String, DeserializedConnection>) -> Vec<ConfigLintWarning> {
+    pub fn convert_connections(connections: &mut HashMap<String, DeserializedConnection>) -> HashSet<ConfigLintWarning> {
 
         let mut errs: Vec<ConfigLintWarning> = vec![];
 
@@ -273,7 +275,7 @@ impl Config {
 
     }
 
-    pub fn lint(config: &mut Config) -> Vec<ConfigLintWarning> {
+    pub fn lint(config: &mut Config) -> HashSet<ConfigLintWarning> {
         use std::iter::FromIterator;
 
         let mut errs = Config::convert_connections(&mut config.flow.connection);
@@ -282,21 +284,32 @@ impl Config {
         }
 
         fn string_to_component_type(s: &str) -> ComponentType {
-            if let Some((_, ct)) = s.split_once(".") {
-                return match ct {
-                    "faucet" => ComponentType::Faucet,
-                    "drain" => ComponentType::Drain,
-                    "launch" => ComponentType::Launch,
-                    _ => panic!("string_to_component_type for string {}", s)
-                }
+            match s {
+                "execution.faucet" => ComponentType::Faucet,
+                "flow.faucet" => ComponentType::Faucet,
+                "flow.launch" => ComponentType::Launch,
+                "flow.faucet[_].monitored_buffers" => ComponentType::Buffer,
+                "execution.drain" => ComponentType::Drain,
+                _ => panic!("Encountered known reg_key in in Config::lint()"),
             }
-            panic!("string_to_component_type for string {}", s);
         }
 
         let registered: HashMap<String, HashSet<String>> = HashMap::<_, _>::from_iter([
             ("execution.faucet".to_string(), config.execution.faucet.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // recommended (where to read)
             ("execution.drain".to_string(), config.execution.drain.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // recommended (where to output)
             ("flow.faucet".to_string(), config.flow.faucet.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // optional (min/max buffered)
+            (
+                "flow.faucet[_].monitored_buffers".to_string(),
+                config.flow.faucet.iter().fold(
+                    HashSet::new(),
+                    |mut acc, kv| {
+                        for mb in kv.1.monitored_buffers.iter() {
+                            acc.insert(mb.to_string());
+                        }
+                        acc
+                    }
+                )
+            ), // optional (min/max buffered)
             ("flow.launch".to_string(), config.flow.launch.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // required (how to launch the programs)
         ]);
 
@@ -311,6 +324,15 @@ impl Config {
             }
         }
 
+        fn extend_hashset<X>(add_to: &mut HashSet<X>, take_from: &mut HashSet<X>)
+            where X: std::cmp::Eq + std::hash::Hash
+        {
+            for tf in take_from.drain() {
+                add_to.insert(tf);
+            }
+        }
+
+        // Collect the names / types of all components in the flow of data
         let known_components: HashSet<(&ComponentType, &str)> = config.flow.connection.iter()
             .fold(
                 HashSet::new(),
@@ -328,26 +350,25 @@ impl Config {
             );
 
         // If something is registered, but does not have a corresponding connection... what do we care?
-        errs.append(
-            registered.iter().fold(
-                &mut Vec::new(),
-                |acc, (reg_key, reg_controls)| {
-                    let mut to_add: Vec<ConfigLintWarning> = reg_controls.iter()
-                        .filter(|reg_control| !known_components.contains(&(&ComponentType::Faucet, reg_control as &str)))
-                        .map(|reg_control| {
-                            ConfigLintWarning::InConfigButMissingFlowConnection {
-                                component_type: string_to_component_type(reg_key),
-                                component_name: reg_control.to_owned(),
-                                config_section: reg_key.to_owned(),
-                            }
-                        })
-                        .collect();
-                    acc.append(&mut to_add);
-                    acc
+        registered.iter().fold(
+            &mut errs,
+            |acc, (reg_key, reg_controls)| {
+                let reg_component_type = string_to_component_type(reg_key.as_str());
+                for reg_control in reg_controls {
+                    if known_components.contains(&(&reg_component_type, reg_control as &str)) {
+                        continue;
+                    }
+                    acc.insert(
+                        ConfigLintWarning::InConfigButMissingFlowConnection {
+                            component_type: string_to_component_type(reg_key),
+                            component_name: reg_control.to_owned(),
+                            config_section: reg_key.to_owned(),
+                        }
+                    );
                 }
-            )
+                acc
+            }
         );
-
 
         fn exists_with_flow_config(registered: &HashMap<std::string::String, std::collections::HashSet<std::string::String>>, registered_key: &str, component_name: &str) -> bool {
             registered.get(registered_key).and_then(|hs| {
@@ -356,34 +377,32 @@ impl Config {
             }).is_none()
         }
 
-        // This is what we care about!
-        errs.append(
-                known_components.iter().fold(
-                &mut Vec::new(),
-                |acc, (component_type, component_name)| {
-                    let in_connections_but_missing_reqd_config = match component_type {
-                        ComponentType::Launch => {
-                            config.flow.launch.get(*component_name).and_then(|l| l.command.as_ref()).is_none()
-                        },
-                        ComponentType::Drain => {
-                            exists_with_flow_config(&registered, "execution.drain", *component_name)
-                        },
-                        ComponentType::Faucet => {
-                            exists_with_flow_config(&registered, "execution.faucet", *component_name)
-                        },
-                        _ => false,
-                    };
-                    if in_connections_but_missing_reqd_config {
-                        acc.push(
-                            ConfigLintWarning::InFlowConnectionButMissingConfig {
-                                component_type: **component_type,
-                                component_name: component_name.to_owned().to_string()
-                            }
-                        );
-                    }
-                    acc
+        // If something is in the flow of data, but is missing required config we have a problem.
+        known_components.iter().fold(
+            &mut errs,
+            |acc, (component_type, component_name)| {
+                let in_connections_but_missing_reqd_config = match component_type {
+                    ComponentType::Launch => {
+                        config.flow.launch.get(*component_name).and_then(|l| l.command.as_ref()).is_none()
+                    },
+                    ComponentType::Drain => {
+                        exists_with_flow_config(&registered, "execution.drain", *component_name)
+                    },
+                    ComponentType::Faucet => {
+                        exists_with_flow_config(&registered, "execution.faucet", *component_name)
+                    },
+                    _ => false,
+                };
+                if in_connections_but_missing_reqd_config {
+                    acc.insert(
+                        ConfigLintWarning::InFlowConnectionButMissingConfig {
+                            component_type: **component_type,
+                            component_name: component_name.to_owned().to_string()
+                        }
+                    );
                 }
-            )
+                acc
+            }
         );
 
         errs
@@ -435,18 +454,18 @@ fn config_serde() {
             "faucet": {
                 "tap": {
                     "max_buffered": 1000,
-                    "min_buffered": 500
+                    "min_buffered": 500,
+                    "monitored_buffers": ["abc", "def"]
                 }
             },
             "connection": {
                 "ynmds": [ { "component_type": "faucet", "component_name": "tap", "output_port": "out" }, { "component_type": "launch", "component_name": "command_1", "output_port": "out", "input_port": "in", "priority": 3 }],
                 "trfxg": "command_1 | command_2",
-                "oojza": "command_1[S] | tap",
                 "ynbhz": [ { "component_type": "launch", "component_name": "command_2", "output_port": "out", "input_port": "in", "priority": 3 }, { "component_type": "drain", "component_name": "drain", "input_port": "in", "priority": 3 } ]
             }
         }"#).unwrap(),
         FlowConfig {
-                faucet: HashMap::<_, _>::from_iter([("tap".to_string(), FaucetConfig { max_buffered: 1000, min_buffered: 500 })]),
+                faucet: HashMap::<_, _>::from_iter([("tap".to_string(), FaucetConfig { max_buffered: 1000, min_buffered: 500, monitored_buffers: vec!["abc".to_string(), "def".to_string()] })]),
                 launch: HashMap::<_, _>::from_iter([
                     ( "command_1".to_string(), LaunchConfig { command: Some("cat".to_string()), arg: vec![], path: None, env: HashMap::new() } ),
                     ( "command_2".to_string(), LaunchConfig {
@@ -467,10 +486,6 @@ fn config_serde() {
                     (
                         "trfxg".to_string(),
                         DeserializedConnection::JoinString("command_1 | command_2".to_string())
-                    ),
-                    (
-                        "oojza".to_string(),
-                        DeserializedConnection::JoinString("command_1[S] | tap".to_string())
                     ),
                     (
                         "ynbhz".to_string(),
@@ -541,9 +556,8 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                 = ":" { true }
 
             rule out_port() -> OutputPort
-                = "[" p:$(['E'|'O'|'X'|'S']) "]" {
+                = "[" p:$(['E'|'O'|'X']) "]" {
                     match p {
-                        "S" => OutputPort::Size,
                         "X" => OutputPort::Exit,
                         "E" => OutputPort::Err,
                         "O" => OutputPort::Out,
@@ -686,3 +700,41 @@ fn test_load_connection_from_string() {
 
 }
 
+
+#[test]
+fn test_lint() {
+
+    use std::iter::FromIterator;
+    let config_string = r#"{
+      "execution": {
+        "faucet": {
+          "tap": "res/test/simple_input.txt"
+        },
+        "drain": {
+          "hole": "-",
+          "plug": "_"
+        }
+      },
+      "flow": {
+        "faucet": {},
+        "launch": {
+          "filter_adult": { "command": "grep", "path": null, "env": {}, "arg": [ "-v", "^[^ \\]\\{5\\}" ] },
+          "mark_adult": { "command": "sed", "path": null, "env": {}, "arg": [ "s/^/Adult:/" ] },
+          "exit_filter_adult": { "command": "awk", "path": null, "env": {}, "arg": [" { print \"EXIT: filter_adult: \" $0 }"] }
+        },
+        "connection": {
+          "main": "f:tap | j:split | l:filter_adult | l:mark_adult | j:join | d:hole"
+        }
+      }
+    }"#;
+
+    let mut config = serde_json::from_str::<Config>(config_string).unwrap();
+    assert_eq!(
+        HashSet::<_>::from_iter([
+            ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "execution.drain".to_string(), component_type: ComponentType::Drain, component_name: "plug".to_string() },
+            ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "flow.launch".to_string(), component_type: ComponentType::Launch, component_name: "exit_filter_adult".to_string() },
+        ]),
+        Config::lint(&mut config)
+    );
+
+}
