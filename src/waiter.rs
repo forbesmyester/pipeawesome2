@@ -1,6 +1,4 @@
 use crate::connectable::ConnectableErrorSource;
-use std::path::Path;
-use std::ffi::OsStr;
 use crate::connectable::ConnectableError;
 use crate::connectable::{ Connectable, ConnectableAddOutputError, OutputPort };
 use crate::motion::Pull;
@@ -38,22 +36,6 @@ pub struct JoinTo<'a> {
     pub component_type: ComponentType,
     pub component_name: &'a str,
     pub input_priority: isize,
-}
-
-
-enum ConnectableHolder<'a, E, P, O, A, K, V, R>
-    where E: IntoIterator<Item = (K, V)>,
-          P: AsRef<Path>,
-          O: AsRef<OsStr>,
-          A: IntoIterator<Item = R>,
-          K: AsRef<OsStr>,
-          V: AsRef<OsStr>,
-          R: AsRef<OsStr> {
-    Faucet(&'a Faucet),
-    Launch(&'a Launch<E, P, O, A, K, V, R>),
-    Junction(&'a Junction),
-    Buffer(&'a Buffer),
-    Drain(&'a Drain),
 }
 
 

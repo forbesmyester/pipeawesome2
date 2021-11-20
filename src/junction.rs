@@ -3,7 +3,7 @@ use crate::connectable::ConnectableAddOutputError;
 use crate::connectable::OutputPort;
 use crate::connectable::Connectable;
 use async_std::channel::bounded;
-use crate::motion::{IOData, motion_close};
+use crate::motion::motion_close;
 use crate::utils::{ remove_vec_vec, remove_vec_vec_index };
 
 use super::motion::{ MotionResult, MotionNotifications, Pull, Push, };
@@ -103,7 +103,7 @@ impl Junction {
 
 impl Connectable for Junction {
 
-    fn add_output(&mut self, port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
+    fn add_output(&mut self, _port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
         self.stdout.push(Push::IoSender(child_stdout_push_channel));
         Ok(Pull::Receiver(stdout_io_reciever_channel))
@@ -144,141 +144,144 @@ impl StartableControl for Junction {
 }
 
 
-pub async fn test_junction_impl() -> MotionResult<usize>  {
 
-    async fn read_data(mut output: &mut Pull) -> Vec<IOData> {
-        let mut v = vec![];
-        loop {
-            let x: MotionResult<crate::motion::IODataWrapper> = crate::motion::motion_read(&mut output, true).await;
-            match x {
-                Ok(crate::motion::IODataWrapper::IOData(x)) => {
-                    v.push(x)
-                }
-                _ => {
-                    return v;
-                }
-            }
-        }
-    }
-
-    let (chan_0_0_snd, chan_0_0_rcv) = bounded(256);
-    let (chan_0_1_snd, chan_0_1_rcv) = bounded(256);
-    let (chan_1_0_snd, chan_1_0_rcv) = bounded(256);
-
-    chan_0_0_snd.send(IOData(vec![65; 8])).await.unwrap();
-    chan_0_0_snd.send(IOData(vec![66; 8])).await.unwrap();
-    chan_0_1_snd.send(IOData(vec![70; 8])).await.unwrap();
-    chan_0_1_snd.send(IOData(vec![71; 8])).await.unwrap();
-    chan_1_0_snd.send(IOData(vec![75; 8])).await.unwrap();
-
-    // chan_0_0_snd.close();
-    // chan_0_1_snd.close();
-    // chan_1_0_snd.close();
-
-    let pull_0_0 = Pull::Receiver(chan_0_0_rcv);
-    let pull_0_1 = Pull::Receiver(chan_0_1_rcv);
-    let pull_1_0 = Pull::Receiver(chan_1_0_rcv);
-
-    let mut junction = Junction::new();
-    junction.set_stdout_size(8);
-    junction.add_input(pull_0_0, 0);
-    junction.add_input(pull_0_1, 0);
-    junction.add_input(pull_1_0, 1);
-    junction.initialize_stdin();
-    let mut output_1 = junction.add_output(OutputPort::Out).unwrap();
-    let mut output_2 = junction.add_output(OutputPort::Out).unwrap();
-
-    let mut back_off = BackOff::new();
-    let mut notifications = MotionNotifications::empty();
-
-    assert_eq!(
-        junction.iteration(&mut notifications, &mut back_off).await,
-        Ok((false, 2))
-    );
-
-    let output_1_result_0 = read_data(&mut output_1).await;
-    assert_eq!(output_1_result_0, read_data(&mut output_2).await);
-    assert_eq!(
-        output_1_result_0,
-        vec![
-            IOData(vec![65; 8]),
-            IOData(vec![70; 8]),
-        ]
-    );
-
-    assert_eq!(
-        junction.iteration(&mut notifications, &mut back_off).await,
-        Ok((false, 2))
-    );
-    let output_1_result_1 = read_data(&mut output_1).await;
-    assert_eq!(output_1_result_1, read_data(&mut output_2).await);
-    assert_eq!(
-        output_1_result_1,
-        vec![
-            IOData(vec![66; 8]),
-            IOData(vec![71; 8]),
-        ]
-    );
-
-    assert_eq!(
-        junction.iteration(&mut notifications, &mut back_off).await,
-        Ok((false, 1))
-    );
-    let output_1_result_2 = read_data(&mut output_1).await;
-    assert_eq!(output_1_result_2, read_data(&mut output_2).await);
-    assert_eq!(
-        output_1_result_2,
-        vec![IOData(vec![75; 8])],
-    );
-
-    chan_0_0_snd.send(IOData(vec![67; 8])).await.unwrap();
-    chan_0_0_snd.close();
-
-    assert_eq!(
-        junction.iteration(&mut notifications, &mut back_off).await,
-        Ok((false, 1))
-    );
-    let output_1_result_2 = read_data(&mut output_1).await;
-    assert_eq!(output_1_result_2, read_data(&mut output_2).await);
-    assert_eq!(
-        output_1_result_2,
-        vec![IOData(vec![67; 8])],
-    );
-
-    assert_eq!(
-        junction.iteration(&mut notifications, &mut back_off).await,
-        Ok((false, 1))
-    );
-    let output_1_result_2 = read_data(&mut output_1).await;
-    assert_eq!(output_1_result_2, read_data(&mut output_2).await);
-    assert_eq!(
-        output_1_result_2,
-        vec![]
-    );
-
-    chan_0_1_snd.close();
-    chan_1_0_snd.close();
-    assert_eq!(
-        junction.iteration(&mut notifications, &mut back_off).await,
-        Ok((false, 1))
-    );
-    let output_1_result_2 = read_data(&mut output_1).await;
-    assert_eq!(output_1_result_2, read_data(&mut output_2).await);
-    assert_eq!(
-        output_1_result_2,
-        vec![]
-    );
-
-    assert_eq!(
-        junction.iteration(&mut notifications, &mut back_off).await,
-        Ok((true, 1))
-    );
-
-    MotionResult::Ok(1)
-}
 
 #[test]
 fn do_stuff() {
+
+    pub async fn test_junction_impl() -> MotionResult<usize>  {
+
+        async fn read_data(mut output: &mut Pull) -> Vec<IOData> {
+            let mut v = vec![];
+            loop {
+                let x: MotionResult<crate::motion::IODataWrapper> = crate::motion::motion_read(&mut output, true).await;
+                match x {
+                    Ok(crate::motion::IODataWrapper::IOData(x)) => {
+                        v.push(x)
+                    }
+                    _ => {
+                        return v;
+                    }
+                }
+            }
+        }
+
+        let (chan_0_0_snd, chan_0_0_rcv) = bounded(256);
+        let (chan_0_1_snd, chan_0_1_rcv) = bounded(256);
+        let (chan_1_0_snd, chan_1_0_rcv) = bounded(256);
+
+        chan_0_0_snd.send(IOData(vec![65; 8])).await.unwrap();
+        chan_0_0_snd.send(IOData(vec![66; 8])).await.unwrap();
+        chan_0_1_snd.send(IOData(vec![70; 8])).await.unwrap();
+        chan_0_1_snd.send(IOData(vec![71; 8])).await.unwrap();
+        chan_1_0_snd.send(IOData(vec![75; 8])).await.unwrap();
+
+        // chan_0_0_snd.close();
+        // chan_0_1_snd.close();
+        // chan_1_0_snd.close();
+
+        let pull_0_0 = Pull::Receiver(chan_0_0_rcv);
+        let pull_0_1 = Pull::Receiver(chan_0_1_rcv);
+        let pull_1_0 = Pull::Receiver(chan_1_0_rcv);
+
+        let mut junction = Junction::new();
+        junction.set_stdout_size(8);
+        junction.add_input(pull_0_0, 0).unwrap();
+        junction.add_input(pull_0_1, 0).unwrap();
+        junction.add_input(pull_1_0, 1).unwrap();
+        junction.initialize_stdin();
+        let mut output_1 = junction.add_output(OutputPort::Out).unwrap();
+        let mut output_2 = junction.add_output(OutputPort::Out).unwrap();
+
+        let mut back_off = BackOff::new();
+        let mut notifications = MotionNotifications::empty();
+
+        assert_eq!(
+            junction.iteration(&mut notifications, &mut back_off).await,
+            Ok((false, 2))
+        );
+
+        let output_1_result_0 = read_data(&mut output_1).await;
+        assert_eq!(output_1_result_0, read_data(&mut output_2).await);
+        assert_eq!(
+            output_1_result_0,
+            vec![
+                IOData(vec![65; 8]),
+                IOData(vec![70; 8]),
+            ]
+        );
+
+        assert_eq!(
+            junction.iteration(&mut notifications, &mut back_off).await,
+            Ok((false, 2))
+        );
+        let output_1_result_1 = read_data(&mut output_1).await;
+        assert_eq!(output_1_result_1, read_data(&mut output_2).await);
+        assert_eq!(
+            output_1_result_1,
+            vec![
+                IOData(vec![66; 8]),
+                IOData(vec![71; 8]),
+            ]
+        );
+
+        assert_eq!(
+            junction.iteration(&mut notifications, &mut back_off).await,
+            Ok((false, 1))
+        );
+        let output_1_result_2 = read_data(&mut output_1).await;
+        assert_eq!(output_1_result_2, read_data(&mut output_2).await);
+        assert_eq!(
+            output_1_result_2,
+            vec![IOData(vec![75; 8])],
+        );
+
+        chan_0_0_snd.send(IOData(vec![67; 8])).await.unwrap();
+        chan_0_0_snd.close();
+
+        assert_eq!(
+            junction.iteration(&mut notifications, &mut back_off).await,
+            Ok((false, 1))
+        );
+        let output_1_result_2 = read_data(&mut output_1).await;
+        assert_eq!(output_1_result_2, read_data(&mut output_2).await);
+        assert_eq!(
+            output_1_result_2,
+            vec![IOData(vec![67; 8])],
+        );
+
+        assert_eq!(
+            junction.iteration(&mut notifications, &mut back_off).await,
+            Ok((false, 1))
+        );
+        let output_1_result_2 = read_data(&mut output_1).await;
+        assert_eq!(output_1_result_2, read_data(&mut output_2).await);
+        assert_eq!(
+            output_1_result_2,
+            vec![]
+        );
+
+        chan_0_1_snd.close();
+        chan_1_0_snd.close();
+        assert_eq!(
+            junction.iteration(&mut notifications, &mut back_off).await,
+            Ok((false, 1))
+        );
+        let output_1_result_2 = read_data(&mut output_1).await;
+        assert_eq!(output_1_result_2, read_data(&mut output_2).await);
+        assert_eq!(
+            output_1_result_2,
+            vec![]
+        );
+
+        assert_eq!(
+            junction.iteration(&mut notifications, &mut back_off).await,
+            Ok((true, 1))
+        );
+
+        MotionResult::Ok(1)
+    }
+
     use async_std::task;
     println!("R: {:?}", task::block_on(test_junction_impl()));
 }

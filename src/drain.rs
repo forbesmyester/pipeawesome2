@@ -35,7 +35,7 @@ impl Drain {
 
 impl Connectable for Drain {
 
-    fn add_output(&mut self, port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
+    fn add_output(&mut self, _port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
         Err(ConnectableAddOutputError::UnsupportedForControl)
     }
 

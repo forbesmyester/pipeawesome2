@@ -35,11 +35,30 @@ pub struct LaunchConfig {
 }
 
 
+fn default_faucet_drain_config_source_destination() -> String {
+    "-".to_string()
+}
+
+
+fn default_faucet_empty_vector() -> Vec<String> {
+    vec![]
+}
+
+
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct FaucetConfig {
-    pub min_buffered: usize,
-    pub max_buffered: usize,
+    pub buffered: Option<(usize, usize)>,
+    #[serde(default = "default_faucet_empty_vector")]
     pub monitored_buffers: Vec<String>,
+    #[serde(default = "default_faucet_drain_config_source_destination")]
+    pub source: String,
+}
+
+
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+pub struct DrainConfig {
+    #[serde(default = "default_faucet_drain_config_source_destination")]
+    pub destination: String,
 }
 
 
@@ -82,66 +101,24 @@ pub enum DeserializedConnection {
     Connections(Vec<Connection>),
 }
 
+
+impl Default for Config {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
-pub struct FlowConfig {
+pub struct Config {
     #[serde(default = "HashMap::new")]
     pub faucet: HashMap<String, FaucetConfig>,
+    #[serde(default = "HashMap::new")]
+    pub drain: HashMap<String, DrainConfig>,
     #[serde(default = "HashMap::new")]
     pub launch: HashMap<String, LaunchConfig>,
     #[serde(default = "HashMap::new")]
     pub connection: HashMap<String, DeserializedConnection>,
-}
-
-
-#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
-pub struct ExecutionConfig {
-    #[serde(default = "HashMap::new")]
-    pub faucet: HashMap<String, String>,
-    #[serde(default = "HashMap::new")]
-    pub drain: HashMap<String, String>,
-}
-
-impl ExecutionConfig {
-    pub fn new() -> ExecutionConfig {
-        ExecutionConfig {
-            faucet: HashMap::new(),
-            drain: HashMap::new(),
-        }
-    }
-}
-
-
-impl Default for ExecutionConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-
-impl FlowConfig {
-    pub fn new() -> FlowConfig {
-        FlowConfig {
-            faucet: HashMap::new(),
-            launch: HashMap::new(),
-            connection: HashMap::new(),
-        }
-    }
-}
-
-
-impl Default for FlowConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
-pub struct Config {
-    #[serde(default = "ExecutionConfig::new")]
-    pub execution: ExecutionConfig,
-    #[serde(default = "FlowConfig::new")]
-    pub flow: FlowConfig,
 }
 
 
@@ -153,11 +130,13 @@ pub enum ConfigLintWarning {
 }
 
 impl ToString for ConfigLintWarning {
+
+
     fn to_string(&self) -> std::string::String {
         match self {
             ConfigLintWarning::InConfigButMissingFlowConnection { config_section, component_type, component_name } => {
                 format!(
-                    "There is configuration for {}:{} in {}, but this is not referenced in the connections",
+                    "PA: Error: 0001: {}:{} - Configuration exists in {}, but this is not referenced in the connections",
                     component_type,
                     component_name,
                     config_section
@@ -165,74 +144,78 @@ impl ToString for ConfigLintWarning {
             },
             ConfigLintWarning::InFlowConnectionButMissingConfig { component_type, component_name } => {
                 format!(
-                    "A {}:{} is referenced in the flow connections, but is missing required configuration",
+                    "PA: Error: 0002: {}:{} - Is referenced in the flow connections, but is missing required configuration",
                     component_type,
                     component_name,
                 )
             },
             ConfigLintWarning::InvalidConnection { id, join } => {
-                format!("The connection {} which is {} could not be converted", id, join)
+                format!("PA: Error: 0003: {}:{} - Could not be converted from the configuration", id, join)
             },
         }
     }
 }
 
+
 impl Config {
 
     pub fn faucet_set_watermark(mut config: Config, faucet_id: String, min: usize, max: usize) -> Config {
-        let mut faucet_config = match min > max {
-            true => FaucetConfig { min_buffered: max, max_buffered: min, monitored_buffers: vec![] },
-            false => FaucetConfig { min_buffered: min, max_buffered: max, monitored_buffers: vec![] },
+        let faucet_config = match min > max {
+            true => FaucetConfig { source: default_faucet_drain_config_source_destination(), buffered: Some((max, min)), monitored_buffers: vec![] },
+            false => FaucetConfig { source: default_faucet_drain_config_source_destination(), buffered: Some((min, max)), monitored_buffers: vec![] },
         };
-        config.flow.faucet.entry(faucet_id)
-            .and_modify(|x| std::mem::swap(x, &mut faucet_config))
+        config.faucet.entry(faucet_id)
+            .and_modify(|x| {
+                x.buffered = faucet_config.buffered;
+            })
             .or_insert(faucet_config);
         config
     }
 
-    pub fn faucet_set_source(mut config: Config, faucet_id: String, mut faucet_source: String) -> Config {
-        config.execution.faucet.entry(faucet_id)
-            .and_modify(|x| std::mem::swap(x, &mut faucet_source))
-            .or_insert(faucet_source);
+    pub fn faucet_set_source(mut config: Config, faucet_id: String, faucet_source: String) -> Config {
+        config.faucet.entry(faucet_id)
+            .and_modify(|x| { x.source = faucet_source.to_string() })
+            .or_insert(FaucetConfig { source: faucet_source, buffered: None, monitored_buffers: vec![] });
         config
     }
 
-    pub fn drain_set_destination(mut config: Config, drain_id: String, mut drain_destination: String) -> Config {
-        config.execution.drain.entry(drain_id)
-            .and_modify(|x| std::mem::swap(x, &mut drain_destination))
-            .or_insert(drain_destination);
+    pub fn drain_set_destination(mut config: Config, drain_id: String, drain_destination: String) -> Config {
+        let mut d = DrainConfig { destination: drain_destination };
+        config.drain.entry(drain_id)
+            .and_modify(|x| std::mem::swap(x, &mut d))
+            .or_insert(d);
         config
     }
 
     pub fn connection_join(mut config: Config, connection_id: String, mut connection_spec: DeserializedConnection) -> Config {
-        config.flow.connection.entry(connection_id)
+        config.connection.entry(connection_id)
             .and_modify(|x| std::mem::swap(x, &mut connection_spec))
             .or_insert(connection_spec);
         config
     }
 
     pub fn launch_set_command(mut config: Config, launch_id: String, command: String) -> Config {
-        config.flow.launch.entry(launch_id)
+        config.launch.entry(launch_id)
             .and_modify(|mut lc| lc.command = Some(command.clone()))
             .or_insert(LaunchConfig { command: Some(command), path: None, env: HashMap::new(), arg: vec![] });
         config
     }
     pub fn launch_set_path(mut config: Config, launch_id: String, path: String) -> Config {
-        config.flow.launch.entry(launch_id)
+        config.launch.entry(launch_id)
             .and_modify(|mut lc| lc.path = Some(path.clone()))
             .or_insert(LaunchConfig { command: None, path: Some(path), env: HashMap::new(), arg: vec![] });
         config
     }
 
     pub fn launch_set_args(mut config: Config, launch_id: String, mut args: Vec<String>) -> Config {
-        config.flow.launch.entry(launch_id)
+        config.launch.entry(launch_id)
             .and_modify(|mut lc| lc.arg = std::mem::take(&mut args))
             .or_insert(LaunchConfig { command: None, path: None, env: HashMap::new(), arg: args });
         config
     }
 
     pub fn launch_set_env(mut config: Config, launch_id: String, mut env: HashMap<String, String>) -> Config {
-        config.flow.launch.entry(launch_id)
+        config.launch.entry(launch_id)
             .and_modify(|mut lc| lc.env = std::mem::take(&mut env))
             .or_insert(LaunchConfig { command: None, path: None, env, arg: vec![] });
         config
@@ -249,8 +232,6 @@ impl Config {
 
     pub fn convert_connections(connections: &mut HashMap<String, DeserializedConnection>) -> HashSet<ConfigLintWarning> {
 
-        let mut errs: Vec<ConfigLintWarning> = vec![];
-
         connections.iter_mut()
             .filter_map(
                 |(k, v)| {
@@ -263,7 +244,7 @@ impl Config {
                                 }
                             }
                         },
-                        DeserializedConnection::Connections(x) => None
+                        DeserializedConnection::Connections(_) => None
                     };
                     if let Some(x) = replace_with {
                         let mut d = DeserializedConnection::Connections(x);
@@ -278,29 +259,27 @@ impl Config {
     pub fn lint(config: &mut Config) -> HashSet<ConfigLintWarning> {
         use std::iter::FromIterator;
 
-        let mut errs = Config::convert_connections(&mut config.flow.connection);
+        let mut errs = Config::convert_connections(&mut config.connection);
         if !errs.is_empty() {
             return errs;
         }
 
         fn string_to_component_type(s: &str) -> ComponentType {
             match s {
-                "execution.faucet" => ComponentType::Faucet,
-                "flow.faucet" => ComponentType::Faucet,
-                "flow.launch" => ComponentType::Launch,
-                "flow.faucet[_].monitored_buffers" => ComponentType::Buffer,
-                "execution.drain" => ComponentType::Drain,
+                "faucet" => ComponentType::Faucet,
+                "launch" => ComponentType::Launch,
+                "faucet[_].monitored_buffers" => ComponentType::Buffer,
+                "drain" => ComponentType::Drain,
                 _ => panic!("Encountered known reg_key in in Config::lint()"),
             }
         }
 
         let registered: HashMap<String, HashSet<String>> = HashMap::<_, _>::from_iter([
-            ("execution.faucet".to_string(), config.execution.faucet.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // recommended (where to read)
-            ("execution.drain".to_string(), config.execution.drain.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // recommended (where to output)
-            ("flow.faucet".to_string(), config.flow.faucet.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // optional (min/max buffered)
+            ("drain".to_string(), config.drain.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // recommended (where to output)
+            ("faucet".to_string(), config.faucet.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // optional (min/max buffered)
             (
-                "flow.faucet[_].monitored_buffers".to_string(),
-                config.flow.faucet.iter().fold(
+                "faucet[_].monitored_buffers".to_string(),
+                config.faucet.iter().fold(
                     HashSet::new(),
                     |mut acc, kv| {
                         for mb in kv.1.monitored_buffers.iter() {
@@ -310,7 +289,7 @@ impl Config {
                     }
                 )
             ), // optional (min/max buffered)
-            ("flow.launch".to_string(), config.flow.launch.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // required (how to launch the programs)
+            ("launch".to_string(), config.launch.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // required (how to launch the programs)
         ]);
 
         fn quick_conv(ds: &DeserializedConnection) -> Vec<&Connection> {
@@ -320,20 +299,12 @@ impl Config {
                     for c in cs { v.push(c); }
                     v
                 },
-                DeserializedConnection::JoinString(s) => vec![],
-            }
-        }
-
-        fn extend_hashset<X>(add_to: &mut HashSet<X>, take_from: &mut HashSet<X>)
-            where X: std::cmp::Eq + std::hash::Hash
-        {
-            for tf in take_from.drain() {
-                add_to.insert(tf);
+                DeserializedConnection::JoinString(_) => vec![],
             }
         }
 
         // Collect the names / types of all components in the flow of data
-        let known_components: HashSet<(&ComponentType, &str)> = config.flow.connection.iter()
+        let known_components: HashSet<(&ComponentType, &str)> = config.connection.iter()
             .fold(
                 HashSet::new(),
                 |mut acc, (_, deserialized_connection)| {
@@ -358,6 +329,7 @@ impl Config {
                     if known_components.contains(&(&reg_component_type, reg_control as &str)) {
                         continue;
                     }
+                    // TODO: Check taps don't reference missing buffers
                     acc.insert(
                         ConfigLintWarning::InConfigButMissingFlowConnection {
                             component_type: string_to_component_type(reg_key),
@@ -382,14 +354,14 @@ impl Config {
             &mut errs,
             |acc, (component_type, component_name)| {
                 let in_connections_but_missing_reqd_config = match component_type {
-                    ComponentType::Launch => {
-                        config.flow.launch.get(*component_name).and_then(|l| l.command.as_ref()).is_none()
-                    },
                     ComponentType::Drain => {
-                        exists_with_flow_config(&registered, "execution.drain", *component_name)
+                        exists_with_flow_config(&registered, "drain", *component_name)
                     },
                     ComponentType::Faucet => {
-                        exists_with_flow_config(&registered, "execution.faucet", *component_name)
+                        exists_with_flow_config(&registered, "faucet", *component_name)
+                    },
+                    ComponentType::Launch => {
+                        exists_with_flow_config(&registered, "launch", *component_name)
                     },
                     _ => false,
                 };
@@ -410,17 +382,16 @@ impl Config {
 
     pub fn new() -> Config {
         Config {
-            flow: FlowConfig { faucet: HashMap::new(), launch: HashMap::new(), connection: HashMap::new() },
-            execution: ExecutionConfig { faucet: HashMap::new(), drain: HashMap::new() }
+            faucet: HashMap::new(),
+            drain: HashMap::new(),
+            launch: HashMap::new(),
+            connection: HashMap::new(),
         }
     }
+
+
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 #[test]
 fn config_serde() {
@@ -428,9 +399,10 @@ fn config_serde() {
     use std::iter::FromIterator;
 
     assert_eq!(
-        serde_json::from_str::<FlowConfig>(r#"{"connection": {"a": "faucet[O] | [3]drain"}}"#).unwrap(),
-        FlowConfig {
+        serde_json::from_str::<Config>(r#"{"connection": {"a": "faucet[O] | [3]drain"}}"#).unwrap(),
+        Config {
             faucet: HashMap::new(),
+            drain: HashMap::new(),
             launch: HashMap::new(),
             connection: HashMap::<_, _>::from_iter([
                 ("a".to_string(), DeserializedConnection::JoinString("faucet[O] | [3]drain".to_string()))
@@ -446,15 +418,14 @@ fn config_serde() {
     // pa --faucet-src=- --drain-dst=- --faucet-min-max tap100,1000 --launch-command command_1=cat --launch-command command_2=cat --launch-env command_2=USER=forbesmyester --launch-arg command_2=-n --launch-path command_2=/home/forbesmyester --connection 0='command1[S] | tap'
 
     assert_eq!(
-        serde_json::from_str::<FlowConfig>(r#"{
+        serde_json::from_str::<Config>(r#"{
             "launch": {
                 "command_1": { "command": "cat" },
                 "command_2": { "command": "cat", "env": { "USER": "forbesmyester" }, "arg": ["-n"], "path": "/home/forbesmyester" }
             },
             "faucet": {
                 "tap": {
-                    "max_buffered": 1000,
-                    "min_buffered": 500,
+                    "buffered": [500, 1000],
                     "monitored_buffers": ["abc", "def"]
                 }
             },
@@ -464,8 +435,9 @@ fn config_serde() {
                 "ynbhz": [ { "component_type": "launch", "component_name": "command_2", "output_port": "out", "input_port": "in", "priority": 3 }, { "component_type": "drain", "component_name": "drain", "input_port": "in", "priority": 3 } ]
             }
         }"#).unwrap(),
-        FlowConfig {
-                faucet: HashMap::<_, _>::from_iter([("tap".to_string(), FaucetConfig { max_buffered: 1000, min_buffered: 500, monitored_buffers: vec!["abc".to_string(), "def".to_string()] })]),
+        Config {
+                faucet: HashMap::<_, _>::from_iter([("tap".to_string(), FaucetConfig { source: "-".to_string(), buffered: Some((500, 1000)), monitored_buffers: vec!["abc".to_string(), "def".to_string()] })]),
+                drain: HashMap::new(),
                 launch: HashMap::<_, _>::from_iter([
                     ( "command_1".to_string(), LaunchConfig { command: Some("cat".to_string()), arg: vec![], path: None, env: HashMap::new() } ),
                     ( "command_2".to_string(), LaunchConfig {
@@ -501,15 +473,10 @@ fn config_serde() {
     assert_eq!(
         serde_json::from_str::<Config>("{}").unwrap(),
         Config {
-            flow: FlowConfig {
-                faucet: HashMap::new(),
-                launch: HashMap::new(),
-                connection: HashMap::new(),
-            },
-            execution: ExecutionConfig {
-                faucet: HashMap::new(),
-                drain: HashMap::new(),
-            }
+            faucet: HashMap::new(),
+            launch: HashMap::new(),
+            connection: HashMap::new(),
+            drain: HashMap::new(),
         }
     );
 
@@ -706,29 +673,25 @@ fn test_lint() {
 
     use std::iter::FromIterator;
     let config_string = r#"{
-      "execution": {
-        "faucet": {
-          "tap": "res/test/simple_input.txt"
-        },
-        "drain": {
-          "hole": "-",
-          "plug": "_"
-        }
+      "faucet": {
+        "tap": { "source": "res/test/simple_input.txt" }
       },
-      "flow": {
-        "faucet": {},
-        "launch": {
-          "filter_adult": { "command": "grep", "path": null, "env": {}, "arg": [ "-v", "^[^ \\]\\{5\\}" ] },
-          "mark_adult": { "command": "sed", "path": null, "env": {}, "arg": [ "s/^/Adult:/" ] },
-          "exit_filter_adult": { "command": "awk", "path": null, "env": {}, "arg": [" { print \"EXIT: filter_adult: \" $0 }"] }
-        },
-        "connection": {
-          "main": "f:tap | j:split | l:filter_adult | l:mark_adult | j:join | d:hole"
-        }
+      "drain": {
+        "hole": { "destination": "-" },
+        "plug": { "destination": "_" }
+      },
+      "launch": {
+        "filter_adult": { "command": "grep", "path": null, "env": {}, "arg": [ "-v", "^[^ \\]\\{5\\}" ] },
+        "mark_adult": { "command": "sed", "path": null, "env": {}, "arg": [ "s/^/Adult:/" ] },
+        "exit_filter_adult": { "command": "awk", "path": null, "env": {}, "arg": [" { print \"EXIT: filter_adult: \" $0 }"] }
+      },
+      "connection": {
+        "main": "f:tap | j:split | l:filter_adult | l:mark_adult | j:join | d:hole"
       }
     }"#;
 
     let mut config = serde_json::from_str::<Config>(config_string).unwrap();
+    println!("{:?}", config);
     assert_eq!(
         HashSet::<_>::from_iter([
             ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "execution.drain".to_string(), component_type: ComponentType::Drain, component_name: "plug".to_string() },

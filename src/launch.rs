@@ -161,9 +161,15 @@ impl <E: IntoIterator<Item = (K, V)>,
             }
         };
         child_builder.stdin(child_stdin);
+
         match self.stdout.is_some() {
             true => { child_builder.stdout(async_std::process::Stdio::piped()); }
             false => { child_builder.stdout(async_std::process::Stdio::null()); }
+        }
+
+        match self.stderr.is_some() {
+            true => { child_builder.stderr(async_std::process::Stdio::piped()); }
+            false => { child_builder.stderr(async_std::process::Stdio::null()); }
         }
 
         let mut child = child_builder.spawn().unwrap();
@@ -180,28 +186,27 @@ impl <E: IntoIterator<Item = (K, V)>,
                 let pull = Pull::CmdStdout(stdout, ReadSplitControl::new());
                 (vec![pull], vec![push])
             },
-            _ => (
+            _ => {
+                (
                     vec![Pull::None],
                     vec![Push::None]
                 )
+            }
         };
 
         let r2 = motion(stdout_pull, MotionNotifications::empty(), stdout_push);
-
-        match self.stderr.is_some() {
-            true => { child_builder.stderr(async_std::process::Stdio::piped()); }
-            false => { child_builder.stderr(async_std::process::Stdio::null()); }
-        }
 
         let (stderr_pull, stderr_push) = match (std::mem::take(&mut child.stderr), std::mem::take( &mut self.stderr)) {
             (Some(stderr), Some(push)) => {
                 let pull = Pull::CmdStderr(stderr, ReadSplitControl::new());
                 (vec![pull], vec![push])
             },
-            _ => (
+            _ => {
+                (
                     vec![Pull::None],
                     vec![Push::None]
-                ),
+                )
+            }
         };
 
         let r3 = motion(stderr_pull, MotionNotifications::empty(), stderr_push);

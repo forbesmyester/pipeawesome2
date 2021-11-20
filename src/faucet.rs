@@ -61,7 +61,7 @@ impl Connectable for Faucet {
         Ok(Pull::Receiver(stdout_io_reciever_channel))
     }
 
-    fn add_input(&mut self, pull: Pull, unused_priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
+    fn add_input(&mut self, _pull: Pull, _unused_priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
         Err(ConnectableAddInputError::UnsupportedForControl)
     }
 

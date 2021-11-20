@@ -6,7 +6,7 @@ use crate::connectable::Connectable;
 use async_std::{channel::SendError, prelude::*};
 
 use async_std::channel::{bounded, unbounded, Receiver, Sender };
-use crate::motion::{IOData, MotionNotifications};
+use crate::motion::{MotionNotifications};
 
 use super::motion::{ motion, MotionError, MonitorMessage, MotionResult, Pull, Push, };
 use crate::back_off::BackOff;
@@ -166,88 +166,90 @@ impl StartableControl for Buffer {
     }
 }
 
-pub async fn test_buffer_impl() -> MotionResult<usize>  {
-    use std::collections::VecDeque;
-
-    async fn read_data(mut output: Pull) -> Vec<IOData> {
-        let mut v: Vec<IOData> = vec![];
-        async_std::task::sleep(std::time::Duration::from_millis(100)).await;
-        loop {
-            let x: MotionResult<crate::motion::IODataWrapper> = crate::motion::motion_read(&mut output, false).await;
-            match x {
-                Ok(crate::motion::IODataWrapper::Finished) => {
-                    return v;
-                }
-                Ok(crate::motion::IODataWrapper::IOData(x)) => {
-                    v.push(x)
-                }
-                _ => {
-                    return vec![];
-                }
-            }
-        }
-    }
-
-    async fn read_monitoring<X>(output: Receiver<X>) -> Vec<X> {
-        let mut v: Vec<X> = vec![];
-        loop {
-            match output.recv().await {
-                Ok(x) => {
-                    v.push(x);
-                },
-                Err(async_std::channel::RecvError) => {
-                    return v;
-                }
-            }
-        }
-    }
-
-    fn get_input() -> VecDeque<IOData> {
-        let mut vdq: VecDeque<IOData> = VecDeque::new();
-        vdq.push_front(IOData(vec![68; 255]));
-        vdq.push_front(IOData(vec![67; 255]));
-        vdq.push_front(IOData(vec![66; 255]));
-        vdq.push_front(IOData(vec![65; 255]));
-        vdq
-    }
-
-    let input = Pull::Mock(get_input());
-    let mut buffer = Buffer::new();
-    buffer.set_stdout_size(1);
-    buffer.add_input(input, 0);
-    let output = buffer.add_output(OutputPort::Out).unwrap();
-    let monitoring = buffer.add_buffer_size_monitor();
-    let buffer_motion = buffer.start();
-    match buffer_motion.join(read_data(output)).join(read_monitoring(monitoring)).await {
-        ((Ok(proc_count), v), monitoring_msg) => {
-            assert_eq!(
-                vec![
-                    IOData(vec![65; 255]),
-                    IOData(vec![66; 255]),
-                    IOData(vec![67; 255]),
-                    IOData(vec![68; 255]),
-                ],
-                v
-            );
-
-            assert_eq!(
-                monitoring_msg, vec![
-                    BufferSizeMessage(1),
-                    BufferSizeMessage(2),
-                    BufferSizeMessage(1),
-                    BufferSizeMessage(0),
-                ]);
-
-            Ok(proc_count)
-        },
-        _ => {
-            panic!("should have succeeded");
-        }
-    }
-}
 
 #[test]
 fn do_stuff() {
+
+    pub async fn test_buffer_impl() -> MotionResult<usize>  {
+        use std::collections::VecDeque;
+
+        async fn read_data(mut output: Pull) -> Vec<IOData> {
+            let mut v: Vec<IOData> = vec![];
+            async_std::task::sleep(std::time::Duration::from_millis(100)).await;
+            loop {
+                let x: MotionResult<crate::motion::IODataWrapper> = crate::motion::motion_read(&mut output, false).await;
+                match x {
+                    Ok(crate::motion::IODataWrapper::Finished) => {
+                        return v;
+                    }
+                    Ok(crate::motion::IODataWrapper::IOData(x)) => {
+                        v.push(x)
+                    }
+                    _ => {
+                        return vec![];
+                    }
+                }
+            }
+        }
+
+        async fn read_monitoring<X>(output: Receiver<X>) -> Vec<X> {
+            let mut v: Vec<X> = vec![];
+            loop {
+                match output.recv().await {
+                    Ok(x) => {
+                        v.push(x);
+                    },
+                    Err(async_std::channel::RecvError) => {
+                        return v;
+                    }
+                }
+            }
+        }
+
+        fn get_input() -> VecDeque<IOData> {
+            let mut vdq: VecDeque<IOData> = VecDeque::new();
+            vdq.push_front(IOData(vec![68; 255]));
+            vdq.push_front(IOData(vec![67; 255]));
+            vdq.push_front(IOData(vec![66; 255]));
+            vdq.push_front(IOData(vec![65; 255]));
+            vdq
+        }
+
+        let input = Pull::Mock(get_input());
+        let mut buffer = Buffer::new();
+        buffer.set_stdout_size(1);
+        buffer.add_input(input, 0).unwrap();
+        let output = buffer.add_output(OutputPort::Out).unwrap();
+        let monitoring = buffer.add_buffer_size_monitor();
+        let buffer_motion = buffer.start();
+        match buffer_motion.join(read_data(output)).join(read_monitoring(monitoring)).await {
+            ((Ok(proc_count), v), monitoring_msg) => {
+                assert_eq!(
+                    vec![
+                        IOData(vec![65; 255]),
+                        IOData(vec![66; 255]),
+                        IOData(vec![67; 255]),
+                        IOData(vec![68; 255]),
+                    ],
+                    v
+                );
+
+                assert_eq!(
+                    monitoring_msg, vec![
+                        BufferSizeMessage(1),
+                        BufferSizeMessage(2),
+                        BufferSizeMessage(1),
+                        BufferSizeMessage(0),
+                    ]);
+
+                Ok(proc_count)
+            },
+            _ => {
+                panic!("should have succeeded");
+            }
+        }
+    }
+
     use async_std::task;
     println!("R: {:?}", task::block_on(test_buffer_impl()));
 }

@@ -12,7 +12,6 @@ use pipeawesome2::config::ComponentType;
 use std::collections::HashSet;
 use pipeawesome2::waiter::Waiter;
 use pipeawesome2::buffer::Buffer;
-use pipeawesome2::connectable::{ Connectable, OutputPort };
 use pipeawesome2::launch::Launch;
 use pipeawesome2::config::Connection;
 use pipeawesome2::config::ConfigLintWarning;
@@ -23,118 +22,13 @@ use clap::ArgMatches;
 use clap::SubCommand;
 use std::collections::HashMap;
 use clap::{ App, Arg };
-// use async_std::io as aio;
-// use pipeawesome2::{buffer::Buffer, drain::Drain, faucet::Faucet, junction::Junction, launch::Launch, motion::{Pull, Push, ReadSplitControl}, waiter::{ WaiterError, Waiter }};
 
-// async fn do_stuff() -> Result<usize, WaiterError> {
-// 
-//     let stdin = aio::stdin();
-//     let stdout = aio::stdout();
-//     let stderr = aio::stderr();
-// 
-//     let mut faucet = Faucet::new(Pull::Stdin(stdin, ReadSplitControl::new()));
-//     let mut junction_0 = Junction::new();
-//     let mut junction_1 = Junction::new();
-//     let mut junction_2 = Junction::new();
-//     let mut drain = Drain::new(Push::Stdout(stdout));
-//     let mut buffer = Buffer::new();
-// 
-//     let mut launch_line_numbers: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-//         None,
-//         None,
-//         "mawk".to_string(),
-//         Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ printf("%04d %s\n", NR, $0) }"#.to_string()])
-//     );
-// 
-//     let mut launch_filter_odd_only: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-//         None,
-//         None,
-//         "mawk".to_string(),
-//         Some(vec!["-W".to_string(), "interactive".to_string(), "-f".to_string(), "res/modulus_print.awk".to_string(), "-v".to_string(), "rem=1".to_string()])
-//     );
-// 
-//     let mut launch_filter_even_only: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-//         None,
-//         None,
-//         "mawk".to_string(),
-//         Some(vec!["-W".to_string(), "interactive".to_string(), "-f".to_string(), "res/modulus_print.awk".to_string(), "-v".to_string(), "rem=0".to_string()])
-//     );
-// 
-//     let mut launch_add_letter_o: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-//         None,
-//         None,
-//         "mawk".to_string(),
-//         Some(vec!["-W".to_string(), "interactive".to_string(), "-v".to_string(), "letter=O".to_string(), r#"{ printf("%s %s: ", $1, letter); for (i=2; i<=NF; i++) printf("%s ", $i); print "" }"#.to_string()])
-//     );
-// 
-//     let mut launch_add_letter_e: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-//         None,
-//         None,
-//         "mawk".to_string(),
-//         Some(vec!["-W".to_string(), "interactive".to_string(), "-v".to_string(), "letter=E".to_string(), r#"{ printf("%s %s: ", $1, letter); for (i=2; i<=NF; i++) printf("%s ", $i); print "" }"#.to_string()])
-//     );
-// 
-//     let mut slow_0: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-//         None,
-//         None,
-//         "mawk".to_string(),
-//         Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ system("sleep 0.1"); print $0 }"#.to_string()])
-//     );
-// 
-//     let mut launch_decorate_exit: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-//         None,
-//         None,
-//         "mawk".to_string(),
-//         Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ print "EXIT: " $0 }"#.to_string()])
-//     );
-// 
-//     let mut slow_1: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-//         None,
-//         None,
-//         "mawk".to_string(),
-//         Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ system("sleep 0.2"); print $0 }"#.to_string()])
-//     );
-// 
-// 
-//     slow_0.add_stdin(faucet.add_stdout());
-//     launch_line_numbers.add_stdin(slow_0.add_stdout());
-//     junction_0.add_stdin(launch_line_numbers.add_stdout(), false);
-//     launch_add_letter_e.add_stdin(junction_0.add_stdout());
-//     launch_add_letter_o.add_stdin(junction_0.add_stdout());
-//     launch_filter_even_only.add_stdin(launch_add_letter_e.add_stdout());
-//     launch_filter_odd_only.add_stdin(launch_add_letter_o.add_stdout());
-//     junction_1.add_stdin(launch_filter_even_only.add_stdout(), false);
-//     junction_1.add_stdin(launch_filter_odd_only.add_stdout(), false);
-// 
-//     buffer.add_stdin(junction_1.add_stdout());
-//     slow_1.add_stdin(buffer.add_stdout());
-//     launch_decorate_exit.add_stdin(launch_line_numbers.add_exit_status());
-//     junction_2.add_stdin(launch_decorate_exit.add_stdout(), false);
-//     junction_2.add_stdin(slow_1.add_stdout(), false);
-//     drain.add_stdin(junction_2.add_stdout());
-// 
-//     let mut w = Waiter::new();
-// 
-//     w.add_drain("drain".to_string(), drain);
-//     w.add_faucet("faucet".to_string(), faucet);
-//     w.add_launch("launch_line_numbers".to_string(), launch_line_numbers);
-//     w.add_launch("launch_filter_odd_only".to_string(), launch_filter_odd_only);
-//     w.add_launch("launch_filter_even_only".to_string(), launch_filter_even_only);
-//     // w.add_launch("launch_sort".to_string(), launch_sort);
-//     w.add_launch("launch_add_letter_e".to_string(), launch_add_letter_e);
-//     w.add_launch("launch_add_letter_o".to_string(), launch_add_letter_o);
-//     w.add_launch("slow_0".to_string(), slow_0);
-//     w.add_launch("slow_1".to_string(), slow_1);
-//     w.add_launch("launch_decorate_exit".to_string(), launch_decorate_exit);
-//     w.add_buffer("buffer".to_string(), buffer);
-//     w.add_junction("junction_0".to_string(), junction_0);
-//     w.add_junction("junction_1".to_string(), junction_1);
-//     w.add_junction("junction_2".to_string(), junction_2);
-//     w.configure_faucet("faucet".to_string(), vec!["buffer".to_string()], 1, 2);
-// 
-//     w.start().await
-// 
-// }
+
+#[derive(Debug)]
+enum ConfigFormat {
+    JSON,
+    YAML,
+}
 
 fn get_clap_app() -> App<'static, 'static> {
 
@@ -165,6 +59,12 @@ fn get_clap_app() -> App<'static, 'static> {
             .multiple(true)
     }
 
+    fn config_format<'a>() -> Arg<'a, 'a> {
+        Arg::with_name("config-format")
+            .help("The format of the configuration data")
+            .required(false)
+            .possible_values(&["yaml", "json"])
+    }
 
     App::new("PipeAwesome")
         .author("Matthew Forrester, githib.com@speechmarks.com")
@@ -174,11 +74,13 @@ fn get_clap_app() -> App<'static, 'static> {
         .subcommand(
             SubCommand::with_name("process")
                 .arg(get_required_arg_with("config", "The config file to read, \"-\" for STDIN. If not specified it will be blank", "FILENAME"))
-        )
+                .arg(config_format())
+            )
 
         .subcommand(
             SubCommand::with_name("config")
                 .arg(get_required_arg_with("config", "The config file to read, \"-\" for STDIN. If not specified it will be blank", "FILENAME"))
+                .arg(config_format())
                 .arg(get_required_arg_with("config-out", "The config file to write, \"-\" for STDOUT. Defaults to the file being read (otherwise STDOUT)", "FILENAME"))
                 .subcommand(
                     SubCommand::with_name("empty")
@@ -255,6 +157,7 @@ fn get_clap_app() -> App<'static, 'static> {
 struct UserConfigOptionBase {
     id: String,
     config_in: String,
+    config_format: ConfigFormat,
     config_out: String,
 }
 
@@ -293,8 +196,8 @@ enum UserRequest {
         base_options: UserConfigOptionBase,
         join: String,
     },
-    ConfigLintShow { config_in: String, },
-    Process { config_in: String, },
+    ConfigLintShow { config_in: String, config_format: ConfigFormat },
+    Process { config_in: String, config_format: ConfigFormat },
 }
 
 
@@ -308,7 +211,13 @@ pub fn convert_to_deserialized_connection(s: String) -> Result<DeserializedConne
     if let Ok(conns) = serde_json::from_str::<Vec<Connection>>(&s) {
         return Ok(DeserializedConnection::Connections(conns));
     }
-    Err(format!("Looks neither like JSON or JoinString '{}'", s))
+    if let Ok(conn) = serde_yaml::from_str::<Connection>(&s) {
+        return Ok(DeserializedConnection::Connections(vec![conn]));
+    }
+    if let Ok(conns) = serde_yaml::from_str::<Vec<Connection>>(&s) {
+        return Ok(DeserializedConnection::Connections(conns));
+    }
+    Err(format!("Looks neither like JSON, YAML or JoinString '{}'", s))
 }
 
 
@@ -336,10 +245,26 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
         subcommand_inquire(CollectedSubcommands { subcommands: vec![], final_sub_command: matches })
     }
 
+    fn get_config_format<'a>(first_sub_command: Option<&'a ArgMatches>) -> Result<ConfigFormat, String> {
+        let first = first_sub_command.map(|sc1| sc1.value_of("config").or(Some("-"))).flatten();
+
+        let fmt = match first_sub_command.map(|sc1| sc1.value_of("config_format").or(first)).flatten() {
+            Some("yaml") => Some(ConfigFormat::YAML),
+            Some("json") => Some(ConfigFormat::JSON),
+            Some(filename) if filename.ends_with(".yaml") => Some(ConfigFormat::YAML),
+            Some(filename) if filename.ends_with(".yml") => Some(ConfigFormat::YAML),
+            Some(filename) if filename.ends_with(".json") => Some(ConfigFormat::JSON),
+            _ => None
+        };
+
+        fmt.ok_or("Could not figure out configuration format".to_string())
+    }
+
     fn get_standard_config_opts<'a>(first_sub_command: Option<&'a ArgMatches>, second_sub_command: Option<&'a ArgMatches>, second_name: Option<&str>) -> Result<UserConfigOptionBase, String> {
 
-
         let first = first_sub_command.map(|sc1| sc1.value_of("config").or(Some("-"))).flatten();
+
+        let fmt = get_config_format(first_sub_command)?;
 
         let standard_options = (
             first,
@@ -350,7 +275,7 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
 
         match standard_options {
             (Some(config_in), Some(config_out), Some(id), _) => {
-                Ok(UserConfigOptionBase { config_in: config_in.to_string(), config_out: config_out.to_string(), id: id.to_string() })
+                Ok(UserConfigOptionBase { config_format: fmt, config_in: config_in.to_string(), config_out: config_out.to_string(), id: id.to_string() })
             },
             (_, _, None, Some(second_name)) => Err(format!("You need to specify an id for the '{}'", second_name)),
             (_, _, None, _) => Err("You didn't correctly specify what to configure".to_string()),
@@ -384,12 +309,14 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
         let coll_subcomm_str: Vec<&str> = collected_subcommands.subcommands.iter().map(|x| x.1).collect();
         let last_sub_command: Option<&ArgMatches> = collected_subcommands.subcommands.iter().map(|x| x.0).last();
 
+
+
         match (base_options, &coll_subcomm_str[..]) {
             (_, ["process"]) => {
-                Ok(UserRequest::Process { config_in: get_config_in(first_sub_command) })
+                Ok(UserRequest::Process { config_format: get_config_format(first_sub_command)?, config_in: get_config_in(first_sub_command) })
             },
             (_, ["config", "lint"]) => {
-                Ok(UserRequest::ConfigLintShow { config_in: get_config_in(first_sub_command) })
+                Ok(UserRequest::ConfigLintShow { config_format: get_config_format(first_sub_command)?, config_in: get_config_in(first_sub_command) })
             },
             (Ok(base_options), ["config", "connection", "join"]) => {
                 last_sub_command
@@ -511,12 +438,15 @@ fn read_config_as_str(config_in: &str) -> Result<String, String> {
     Ok(buffer)
 }
 
-fn parse_config_str(config_str: &str) -> Result<Config, String> {
-    serde_json::from_str::<Config>(config_str).map_err(|_x| "Could not parse config".to_string())
+fn parse_config_str(fmt: &ConfigFormat, config_str: &str) -> Result<Config, String> {
+    match fmt {
+        ConfigFormat::JSON => serde_json::from_str::<Config>(config_str).map_err(|e| format!("Could not parse config ({})", e)),
+        ConfigFormat::YAML => serde_yaml::from_str::<Config>(config_str).map_err(|e| format!("Could not parse config ({})", e)),
+    }
 }
 
-fn read_config(config_in: &str) -> Result<Config, String> {
-    result_flatten(read_config_as_str(config_in).map(|cas| parse_config_str(&cas)))
+fn read_config(fmt: &ConfigFormat, config_in: &str) -> Result<Config, String> {
+    result_flatten(read_config_as_str(config_in).map(|cas| parse_config_str(fmt, &cas)))
 }
 
 fn result_flatten<X>(x: Result<Result<X, String>, String>) -> Result<X, String> {
@@ -538,50 +468,50 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
 
     match result_config {
         Err(x) => Err(x),
-        Ok(UserRequest::ConnectionJoin { base_options: UserConfigOptionBase { id, config_in, .. }, join, .. }) => {
+        Ok(UserRequest::ConnectionJoin { base_options: UserConfigOptionBase { id, config_in, config_format, .. }, join, .. }) => {
             convert_to_deserialized_connection(join).and_then(|dsc|
-                read_config(&config_in).map(|old_config| Config::connection_join(old_config, id, dsc))
+                read_config(&config_format, &config_in).map(|old_config| Config::connection_join(old_config, id, dsc))
                     .map(UserResponse::Config)
             )
         },
-        Ok(UserRequest::FaucetSrc { base_options: UserConfigOptionBase { id, config_in, .. }, src }) => {
-            read_config(&config_in).map(|old_config| Config::faucet_set_source(old_config, id, src))
+        Ok(UserRequest::FaucetSrc { base_options: UserConfigOptionBase { id, config_in, config_format, .. }, src }) => {
+            read_config(&config_format, &config_in).map(|old_config| Config::faucet_set_source(old_config, id, src))
                 .map(UserResponse::Config)
         },
-        Ok(UserRequest::DrainDst { base_options: UserConfigOptionBase { id, config_in, .. }, dst }) => {
-            read_config(&config_in).map(|old_config| Config::drain_set_destination(old_config, id, dst))
+        Ok(UserRequest::DrainDst { base_options: UserConfigOptionBase { id, config_in, config_format, .. }, dst }) => {
+            read_config(&config_format, &config_in).map(|old_config| Config::drain_set_destination(old_config, id, dst))
                 .map(UserResponse::Config)
         },
-        Ok(UserRequest::FaucetWatermark { base_options: UserConfigOptionBase { id, config_in, .. }, min, max }) => {
-            read_config(&config_in).map(|old_config| Config::faucet_set_watermark(old_config, id, min, max))
+        Ok(UserRequest::FaucetWatermark { base_options: UserConfigOptionBase { id, config_in, config_format, .. }, min, max }) => {
+            read_config(&config_format, &config_in).map(|old_config| Config::faucet_set_watermark(old_config, id, min, max))
                 .map(UserResponse::Config)
         },
-        Ok(UserRequest::LaunchCommand { base_options: UserConfigOptionBase { id, config_in, .. }, command }) => {
-            read_config(&config_in).map(|old_config| Config::launch_set_command(old_config, id, command))
+        Ok(UserRequest::LaunchCommand { base_options: UserConfigOptionBase { id, config_in, config_format, .. }, command }) => {
+            read_config(&config_format, &config_in).map(|old_config| Config::launch_set_command(old_config, id, command))
                 .map(UserResponse::Config)
         },
-        Ok(UserRequest::LaunchPath { base_options: UserConfigOptionBase { id, config_in, .. }, path }) => {
-            read_config(&config_in).map(|old_config| Config::launch_set_path(old_config, id, path))
+        Ok(UserRequest::LaunchPath { base_options: UserConfigOptionBase { id, config_in, config_format, .. }, path }) => {
+            read_config(&config_format, &config_in).map(|old_config| Config::launch_set_path(old_config, id, path))
                 .map(UserResponse::Config)
         },
-        Ok(UserRequest::LaunchArgs { base_options: UserConfigOptionBase { id, config_in, .. }, args }) => {
-            read_config(&config_in).map(|old_config| Config::launch_set_args(old_config, id, args))
+        Ok(UserRequest::LaunchArgs { base_options: UserConfigOptionBase { id, config_in, config_format, .. }, args }) => {
+            read_config(&config_format, &config_in).map(|old_config| Config::launch_set_args(old_config, id, args))
                 .map(UserResponse::Config)
         },
-        Ok(UserRequest::LaunchEnv { base_options: UserConfigOptionBase { id, config_in, .. }, env }) => {
-            read_config(&config_in).map(|old_config| Config::launch_set_env(old_config, id, env))
+        Ok(UserRequest::LaunchEnv { base_options: UserConfigOptionBase { id, config_in, config_format, .. }, env }) => {
+            read_config(&config_format, &config_in).map(|old_config| Config::launch_set_env(old_config, id, env))
                 .map(UserResponse::Config)
         },
-        Ok(UserRequest::ConfigLintShow { config_in }) => {
-            let mut config = read_config(&config_in)?;
+        Ok(UserRequest::ConfigLintShow { config_in, config_format }) => {
+            let mut config = read_config(&config_format, &config_in)?;
             let errs = Config::lint(&mut config).into_iter().map(|c| c.to_string()).collect::<Vec<String>>();
             if errs.is_empty() {
                 return Ok(config).map(UserResponse::Config)
             }
             return Err(format!("We found the following warnings / errors: \n\n * {}\n", errs.join("\n * ")));
         },
-        Ok(UserRequest::Process { config_in }) => {
-            let mut config = read_config(&config_in)?;
+        Ok(UserRequest::Process { config_in, config_format }) => {
+            let mut config = read_config(&config_format, &config_in)?;
             let errs = Config::lint(&mut config).into_iter()
                 .filter(|lint_err| match lint_err {
                     ConfigLintWarning::InConfigButMissingFlowConnection { .. } => false,
@@ -602,7 +532,7 @@ fn get_waiter(mut config: Config) -> Result<Waiter, String> {
     let mut created: HashSet<(&ComponentType, &str)> = HashSet::new();
     let mut last: Option<&Connection> = None;
 
-    let all_connections = config.flow.connection.iter().fold(
+    let all_connections = config.connection.iter().fold(
         Vec::new(),
         |mut acc, (_hash_key, deser_conn)| {
             if let DeserializedConnection::Connections(v) = deser_conn {
@@ -618,15 +548,13 @@ fn get_waiter(mut config: Config) -> Result<Waiter, String> {
     struct CreateSpec<'a> {
         component_type: &'a ComponentType,
         component_name: &'a String,
-        input_port: Option<&'a InputPort>,
-        output_port: Option<&'a OutputPort>,
     }
 
     fn get_create_spec(connection: &Connection) -> CreateSpec {
         match connection {
-            Connection::MiddleConnection { component_type, component_name, input_port, output_port } => CreateSpec { component_type, component_name, input_port: Some(input_port), output_port: Some(output_port) },
-            Connection::StartConnection { component_type, component_name, output_port } => CreateSpec { component_type, component_name, input_port: None, output_port: Some(output_port) },
-            Connection::EndConnection { component_type, component_name, input_port } => CreateSpec { component_type, component_name, input_port: Some(input_port), output_port: None },
+            Connection::MiddleConnection { component_type, component_name, .. } => CreateSpec { component_type, component_name },
+            Connection::StartConnection { component_type, component_name, .. } => CreateSpec { component_type, component_name },
+            Connection::EndConnection { component_type, component_name, .. } => CreateSpec { component_type, component_name },
         }
     }
 
@@ -651,11 +579,10 @@ fn get_waiter(mut config: Config) -> Result<Waiter, String> {
         match create_spec {
             CreateSpec { component_type: ComponentType::Faucet, component_name, .. } => {
                 // TODO: Figure out how to get this in...
-                let pull = match config.execution.faucet.get(*component_name).map(|s| s.as_str()).unwrap_or("") {
+                let pull = match config.faucet.get(*component_name).map(|t| t.source.as_str()).unwrap_or("") {
                     "-" => Pull::Stdin(async_std::io::stdin(), ReadSplitControl::new()),
                     "" => Pull::None,
                     filename => {
-                        // Pull::Stdin(async_std::io::stdin(), ReadSplitControl::new())
                         let file = async_std::fs::File::open(filename).await.map_err(|_| { format!("Could not open file: {}", filename) })?;
                         Pull::File(file, ReadSplitControl::new())
                     },
@@ -666,7 +593,7 @@ fn get_waiter(mut config: Config) -> Result<Waiter, String> {
             },
             CreateSpec { component_type: ComponentType::Drain, component_name, .. } => {
                 // TODO: Figure out how to get this in...
-                let push = match config.execution.drain.get(*component_name).map(|s| s.as_str()).unwrap_or("") {
+                let push = match config.drain.get(*component_name).map(|s| s.destination.as_str()).unwrap_or("") {
                     "-" => Push::Stdout(async_std::io::stdout()),
                     "_" => Push::Stderr(async_std::io::stderr()),
                     "" => Push::None,
@@ -687,7 +614,7 @@ fn get_waiter(mut config: Config) -> Result<Waiter, String> {
                 Ok(())
             },
             CreateSpec { component_type: ComponentType::Launch, component_name, .. } => {
-                if let Some(cfg) = config.flow.launch.remove(*component_name) {
+                if let Some(cfg) = config.launch.remove(*component_name) {
                     if cfg.command.is_none() {
                         return Err(format!("Launch '{}' did not have a command specified", component_name));
                     }
@@ -701,9 +628,6 @@ fn get_waiter(mut config: Config) -> Result<Waiter, String> {
                     return Ok(());
                 }
                 Err(format!("Could not find configuration for Launch {}", component_name))
-            }
-            _ => {
-                Ok(())
             }
         }
     }
@@ -735,8 +659,10 @@ fn get_waiter(mut config: Config) -> Result<Waiter, String> {
         }
     }
 
-    for (faucet_name, FaucetConfig { monitored_buffers, min_buffered, max_buffered }) in config.flow.faucet.into_iter() {
-        waiter.configure_faucet(faucet_name, monitored_buffers, min_buffered, max_buffered);
+    for (faucet_name, FaucetConfig { source: _, monitored_buffers, buffered}) in config.faucet.into_iter() {
+        if let Some(b) = buffered {
+            waiter.configure_faucet(faucet_name, monitored_buffers, b.0, b.1);
+        }
     }
 
     Ok(waiter)
@@ -750,17 +676,6 @@ fn main() {
 
     let user_action = get_user_config_action(&matches);
     let new_config = process_user_config_action(user_action);
-
-    //    let mut launch_line_numbers: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
-    //        None,
-    //        None,
-    //        "mawk".to_string(),
-    //        Some(vec!["-W".to_string(), "interactive".to_string(), r#"{ printf("%04d %s\n", NR, $0) }"#.to_string()])
-    //    );
-    //
-    //    let mut buffer = Buffer::new();
-    //
-    //    let _r = launch_line_numbers.add_input(buffer.add_output(OutputPort::Out).unwrap(), 0);
 
     let r = match new_config {
         Ok(UserResponse::Config(new_cfg)) => {
@@ -779,9 +694,12 @@ fn main() {
         Err(msg) => Err(msg)
     };
 
+
     match r {
         Ok(s) => {
-            if !s.is_empty() { println!("{}", s); }
+            if !s.is_empty() {
+                println!("{}", s);
+            }
         }
         Err(s) => {
             eprintln!("{}", s);
