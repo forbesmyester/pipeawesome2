@@ -1,0 +1,77 @@
+connection:
+  from_tap: "f:tap | j:tap"
+  to_loop_control: "j:tap | l:mark_new_order | j:loop_control_in | l:loop_control"
+  just_right: "l:loop_control | l:remove_too_just_right_tag | l:sort | d:out"
+  quality_control_reject: "l:loop_control[E] | j:loop_control_stderr"
+  quality_control_too_hot: "j:loop_control_stderr | l:grep_only_too_hot | l:remove_too_hot_tag | l:remove_total_from_too_hot | l:leave_to_cool | l:maths_too_hot | l:tag_by_temperature_too_hot | j:loop_control_in"
+  quality_control_too_cold: "j:loop_control_stderr | l:grep_only_too_cold | l:remove_too_cold_tag | l:remove_total_from_too_cold | l:heat_up | l:maths_too_cold | l:tag_by_temperature_too_cold | j:loop_control_in"
+  quality_control_new_order: "j:loop_control_stderr | l:grep_only_new_order | l:remove_new_order_tag | l:maths_new_order | l:tag_by_temperature_new_order | j:loop_control_in"
+drain:
+  out:
+    destination: '-'
+faucet:
+  tap:
+    source: '-'
+launch:
+  grep_only_new_order: { command: "grep", arg: [ "--line-buffered", '^NEW_ORDER\:' ] }
+  grep_only_too_hot: { command: "grep", arg: [ "--line-buffered", '^TOO_HOT\:' ] }
+  grep_only_too_cold: { command: "grep", arg: [ "--line-buffered", '^TOO_COLD\:' ] }
+  add_stdout: { command: "sed", arg: [ '-u', 's/^/STDOUT: /' ] }
+  sort: { command: "sort" }
+  mark_new_order: { command: "sed", arg: [ '-u', 's/^/NEW_ORDER:/' ] }
+  leave_to_cool: { command: "awk", arg: [ '{ print $0" - 6"; fflush() }' ] }
+  heat_up: { command: "awk", arg: [ '{ print $0" + 15"; fflush() }' ] }
+  remove_new_order_tag: &remove_tag
+    command: "sed"
+    arg: [ '-u', 's/^[A-Z_]\+\://' ]
+  remove_too_hot_tag: *remove_tag
+  remove_too_cold_tag: *remove_tag
+  remove_too_just_right_tag: *remove_tag
+  loop_control:
+    command: "gawk"
+    arg:
+      - |
+        BEGIN {
+            FS=":"
+        }
+        /^NEW_ORDER:/ {
+            UNSEEN++
+        }
+        $1 == "JUST_RIGHT" {
+            UNSEEN--
+            print $0
+            fflush()
+            if (UNSEEN == 0) { exit 0; }
+            next
+        }
+        { print $0 > "/dev/stderr" }
+  remove_total_from_too_hot: &remove_total
+    command: "gawk"
+    arg:
+      - |
+        BEGIN { FS="=" }
+        { print gensub(" +$", "", 1, $1); fflush(); }
+  remove_total_from_too_cold: *remove_total
+  maths_new_order: &maths
+    arg:
+      - |
+        {
+          cmd = "echo "$0" | bc"
+          cmd | getline res
+          close(cmd);
+          print $0" = "res
+          fflush()
+        }
+    command: gawk
+  maths_too_hot: *maths
+  maths_too_cold: *maths
+  tag_by_temperature_new_order: &tag_by_temperature
+    arg:
+      - |
+        BEGIN { FS="=" }
+        ($2 <= 88) { print "TOO_COLD:"$0; fflush(); next }
+        ($2 >= 93) { print "TOO_HOT:"$0; fflush(); next }
+        { print "JUST_RIGHT:"$0; fflush(); next }
+    command: gawk
+  tag_by_temperature_too_hot: *tag_by_temperature
+  tag_by_temperature_too_cold: *tag_by_temperature

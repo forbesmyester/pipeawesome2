@@ -1,0 +1,28 @@
+connection:
+  main: f:tap | l:maths | l:quality_control | d:hole
+drain:
+  hole:
+    destination: '-'
+faucet:
+  tap:
+    source: '-'
+launch:
+  maths:
+    arg:
+    - |
+      {
+        cmd = "echo "$0" | bc"
+        cmd | getline res
+        close(cmd);
+        print INPUT": "$0": "res
+        fflush()
+      }
+    command: gawk
+  quality_control:
+    arg:
+    - |
+      BEGIN { FS=":" }
+      ($3 <= 88) { print "TOO_COLD:"$2":"$3; fflush(); next }
+      ($3 >= 93) { print "TOO_HOT:"$2":"$3; fflush(); next }
+      { print "JUST_RIGHT:"$2":"$3; fflush(); next }
+    command: gawk
