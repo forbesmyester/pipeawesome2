@@ -1,0 +1,5 @@
+1 + 12 + 5 = 18: Put in microwave
+2 + 56 + 22 + 66 = 146: Leave to cool
+3 + 54 = 57: Put in microwave
+4 + 51 + 2 + 33 = 90: Take to customer
+5 + 1 = 6: Put in microwave

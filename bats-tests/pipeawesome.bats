@@ -24,6 +24,17 @@
 }
 
 
+@test "pipeawesome branches" {
+
+    EXPECTED="$( cat ./bats-tests/branches/expected.txt )"
+    RESULT="$( cat ./bats-tests/branches/input.txt | ./target/debug/pipeawesome2 process --config ./bats-tests/branches/pa.yaml )"
+
+    echo "RESULT = $RESULT"
+    echo "EXPECTED = $EXPECTED"
+    [ "$RESULT" = "$EXPECTED" ]
+}
+
+
 @test "pipeawesome loops" {
 
     EXPECTED="$( cat ./bats-tests/loops/expected.txt )"
