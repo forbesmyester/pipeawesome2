@@ -1,13 +1,12 @@
 connection:
-  main: f:tap | l:maths | l:quality_control | d:hole
+  main: f:raw_ingredients | l:kitchen | l:quality_control | d:restaurant
 drain:
-  hole:
-    destination: '-'
+  restaurant: { destination: '-' }
 faucet:
-  tap:
-    source: '-'
+  raw_ingredients: { source: './bats-tests/straight_through_pipe/input.txt' }
 launch:
-  maths:
+  kitchen:
+    command: gawk
     arg:
     - |
       {
@@ -17,12 +16,11 @@ launch:
         print INPUT": "$0": "res
         fflush()
       }
-    command: gawk
   quality_control:
+    command: gawk
     arg:
     - |
       BEGIN { FS=":" }
       ($3 <= 88) { print "TOO_COLD:"$2":"$3; fflush(); next }
       ($3 >= 93) { print "TOO_HOT:"$2":"$3; fflush(); next }
       { print "JUST_RIGHT:"$2":"$3; fflush(); next }
-    command: gawk

@@ -159,6 +159,17 @@ impl ToString for ConfigLintWarning {
 
 impl Config {
 
+    pub fn quick_deserialized_connection_to_connection(ds: &DeserializedConnection) -> Vec<&Connection> {
+        match ds {
+            DeserializedConnection::Connections(cs) => {
+                let mut v = vec![];
+                for c in cs { v.push(c); }
+                v
+            },
+            DeserializedConnection::JoinString(_) => vec![],
+        }
+    }
+
     pub fn faucet_set_watermark(mut config: Config, faucet_id: String, min: usize, max: usize) -> Config {
         let faucet_config = match min > max {
             true => FaucetConfig { source: default_faucet_drain_config_source_destination(), buffered: Some((max, min)), monitored_buffers: vec![] },
@@ -292,29 +303,18 @@ impl Config {
             ("launch".to_string(), config.launch.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // required (how to launch the programs)
         ]);
 
-        fn quick_conv(ds: &DeserializedConnection) -> Vec<&Connection> {
-            match ds {
-                DeserializedConnection::Connections(cs) => {
-                    let mut v = vec![];
-                    for c in cs { v.push(c); }
-                    v
-                },
-                DeserializedConnection::JoinString(_) => vec![],
-            }
-        }
-
         // Collect the names / types of all components in the flow of data
         let known_components: HashSet<(&ComponentType, &str)> = config.connection.iter()
             .fold(
                 HashSet::new(),
                 |mut acc, (_, deserialized_connection)| {
-                    for conn in quick_conv(deserialized_connection) {
+                    for conn in Config::quick_deserialized_connection_to_connection(deserialized_connection) {
                         let cn = match conn {
                             Connection::EndConnection { component_type, component_name, .. } => (component_type, component_name),
                             Connection::MiddleConnection { component_type, component_name, .. } => (component_type, component_name),
                             Connection::StartConnection { component_type, component_name, .. } => (component_type, component_name),
                         };
-                        acc.insert((cn.0, cn.1));
+                        acc.insert((&cn.0, &cn.1));
                     }
                     acc
                 }

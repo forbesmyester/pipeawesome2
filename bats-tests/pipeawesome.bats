@@ -3,7 +3,7 @@
 @test "pipeawesome simple" {
 
     EXPECTED="$( cat ./bats-tests/straight_through_pipe/expected.txt )"
-    RESULT="$( cat ./bats-tests/straight_through_pipe/input.txt | ./target/debug/pipeawesome2 process --config ./bats-tests/straight_through_pipe/pa.yaml )"
+    RESULT="$( ./target/debug/pipeawesome2 process --config ./bats-tests/straight_through_pipe/pa.yaml )"
 
     echo "RESULT = $RESULT"
     echo "EXPECTED = $EXPECTED"

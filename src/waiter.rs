@@ -1,8 +1,15 @@
+use crate::config::{Config, DeserializedConnection };
+use crate::config::FaucetConfig;
+use crate::motion::Push;
+use crate::motion::Pull;
+use crate::motion::ReadSplitControl;
+use crate::config::InputPort;
+use crate::config::ComponentType;
+use std::collections::HashSet;
+use crate::config::Connection;
 use crate::connectable::ConnectableErrorSource;
 use crate::connectable::ConnectableError;
 use crate::connectable::{ Connectable, ConnectableAddOutputError, OutputPort };
-use crate::motion::Pull;
-use crate::config::ComponentType;
 use crate::{buffer::{Buffer, BufferSizeMessage}, drain::Drain, faucet::{Faucet, FaucetControl}, junction::Junction, launch::Launch, motion::MotionError, startable_control::StartableControl};
 use std::collections::HashMap;
 use async_std::{channel::Receiver, prelude::*};
@@ -332,4 +339,146 @@ impl Waiter {
     }
 }
 
+
+struct CreateSpec<'a> {
+    component_type: &'a ComponentType,
+    component_name: &'a String,
+}
+
+fn get_create_spec(connection: &Connection) -> CreateSpec {
+    match connection {
+        Connection::MiddleConnection { component_type, component_name, .. } => CreateSpec { component_type, component_name },
+        Connection::StartConnection { component_type, component_name, .. } => CreateSpec { component_type, component_name },
+        Connection::EndConnection { component_type, component_name, .. } => CreateSpec { component_type, component_name },
+    }
+}
+
+fn convert_connection_to_join_from(connection: &Connection) -> Option<JoinFrom> {
+    match connection {
+        Connection::MiddleConnection { component_type, component_name, output_port, .. } => Some(JoinFrom { component_type: *component_type, component_name: component_name, output_port: *output_port }),
+        Connection::StartConnection { component_type, component_name, output_port } => Some(JoinFrom { component_type: *component_type, component_name: component_name, output_port: *output_port }),
+        Connection::EndConnection { .. } => None,
+    }
+}
+
+fn convert_connection_to_join_to(connection: &Connection) -> Option<JoinTo> {
+    match connection {
+        Connection::MiddleConnection { component_type, component_name, input_port: InputPort::In(input_priority), .. } => Some(JoinTo { component_type: *component_type, component_name, input_priority: *input_priority }),
+        Connection::StartConnection { .. } => None,
+        Connection::EndConnection { component_type, component_name, input_port: InputPort::In(input_priority) } => Some(JoinTo { component_type: *component_type, component_name, input_priority: *input_priority })
+    }
+}
+
+pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
+
+    let mut created: HashSet<(&ComponentType, &str)> = HashSet::new();
+    let mut last: Option<&Connection> = None;
+
+    let all_connections = config.connection.iter().fold(
+        Vec::new(),
+        |mut acc, (_hash_key, deser_conn)| {
+            if let DeserializedConnection::Connections(v) = deser_conn {
+                acc.extend_from_slice(v);
+                return acc;
+            }
+            panic!("Encountered DeserializedConnection::JoinString in main::get_waiter()")
+        }
+    );
+
+    let mut waiter = Waiter::new();
+
+    async fn constructor(create_spec: &CreateSpec<'_>, config: &mut Config, w: &mut Waiter) -> Result<(), String> {
+
+        match create_spec {
+            CreateSpec { component_type: ComponentType::Faucet, component_name, .. } => {
+                // TODO: Figure out how to get this in...
+                let pull = match config.faucet.get(*component_name).map(|t| t.source.as_str()).unwrap_or("") {
+                    "-" => Pull::Stdin(async_std::io::stdin(), ReadSplitControl::new()),
+                    "" => Pull::None,
+                    filename => {
+                        let file = async_std::fs::File::open(filename).await.map_err(|_| { format!("Could not open file: {}", filename) })?;
+                        Pull::File(file, ReadSplitControl::new())
+                    },
+                };
+                let faucet = Faucet::new(pull);
+                w.add_faucet(component_name.to_string(), faucet);
+                Ok(())
+            },
+            CreateSpec { component_type: ComponentType::Drain, component_name, .. } => {
+                // TODO: Figure out how to get this in...
+                let push = match config.drain.get(*component_name).map(|s| s.destination.as_str()).unwrap_or("") {
+                    "-" => Push::Stdout(async_std::io::stdout()),
+                    "_" => Push::Stderr(async_std::io::stderr()),
+                    "" => Push::None,
+                    filename => {
+                        let file = async_std::fs::File::create(filename).await.map_err(|_| { format!("Could not write to file: {}", filename) })?;
+                        Push::File(async_std::io::BufWriter::new(file))
+                    },
+                };
+                w.add_drain(component_name.to_string(), Drain::new(push));
+                Ok(())
+            },
+            CreateSpec { component_type: ComponentType::Buffer, component_name, .. } => {
+                w.add_buffer(component_name.to_string(), Buffer::new());
+                Ok(())
+            },
+            CreateSpec { component_type: ComponentType::Junction, component_name, .. } => {
+                w.add_junction(component_name.to_string(), Junction::new());
+                Ok(())
+            },
+            CreateSpec { component_type: ComponentType::Launch, component_name, .. } => {
+                if let Some(cfg) = config.launch.remove(*component_name) {
+                    if cfg.command.is_none() {
+                        return Err(format!("Launch '{}' did not have a command specified", component_name));
+                    }
+                    let launch: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+                        if cfg.env.is_empty() { None } else { Some(cfg.env) },
+                        cfg.path,
+                        cfg.command.ok_or(format!("Launch '{}' did not have a command specified", component_name))?,
+                        if cfg.arg.is_empty() { None } else { Some(cfg.arg) }
+                    );
+                    w.add_launch(component_name.to_string(), launch);
+                    return Ok(());
+                }
+                Err(format!("Could not find configuration for Launch {}", component_name))
+            }
+        }
+    }
+
+
+    for connection in all_connections.iter() {
+        let create_spec = get_create_spec(connection);
+
+        if !created.contains(&(create_spec.component_type, create_spec.component_name)) {
+            async_std::task::block_on(constructor(&create_spec, &mut config, &mut waiter))?;
+            created.insert((create_spec.component_type, create_spec.component_name));
+        }
+
+        if let Some(last_connection) = last {
+            let err = match (convert_connection_to_join_from(last_connection), convert_connection_to_join_to(connection)) {
+                (Some(join_component_from), Some(join_component_to)) => {
+                    waiter.join(join_component_from, join_component_to).map_err(|c| format!("{}", c))
+                },
+                _ => Err(format!("There should have been a connection between {:?} and {:?}", last_connection, connection))
+            };
+            if let Err(err_msg) = err {
+                return Err(err_msg);
+            }
+        }
+
+        last = Some(connection);
+        if let Connection::EndConnection { .. } = connection {
+            last = None;
+        }
+    }
+
+    for (faucet_name, FaucetConfig { source: _, monitored_buffers, buffered}) in config.faucet.into_iter() {
+        if let Some(b) = buffered {
+            waiter.configure_faucet(faucet_name, monitored_buffers, b.0, b.1);
+        }
+    }
+
+    Ok(waiter)
+
+}
 
