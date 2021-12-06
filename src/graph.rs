@@ -74,7 +74,22 @@ pub fn convert_connection_components_fold<'a>(mut acc: HashMap<&'a ComponentType
     acc
 }
 
-pub fn get_graph(components: HashMap<&ComponentType, HashSet<&str>>, connections: Vec<GraphConnection>) -> Result<String, String> {
+pub fn get_graph(subgraph: Vec<Subgraph>) -> String {
+
+    let stmts = subgraph.into_iter().map(|sg| { Stmt::Subgraph(sg) }).collect();
+
+    let graph = Graph::Graph {
+        id: Id::Plain("g_get_graph".to_string()),
+        strict: true,
+        stmts
+    };
+
+    let mut ctx = PrinterContext::default();
+    graph.print(&mut ctx)
+}
+
+
+pub fn get_diagram(components: HashMap<&ComponentType, HashSet<&str>>, connections: Vec<GraphConnection>) -> Subgraph {
 
     fn component_type_to_letter(ct: &ComponentType) -> &str {
         match ct {
@@ -129,45 +144,42 @@ pub fn get_graph(components: HashMap<&ComponentType, HashSet<&str>>, connections
 
     stmts.append(&mut edgs);
 
-    let g = graph!(
-        strict di id!("t");
-        Subgraph {
-            id: id!("sg"),
-            stmts
-        },
-        subgraph!(
-            "cluster_holder_legend";
-            attr!("color","white"),
-            subgraph!(
-                "cluster_legend";
-                attr!("color","black"),
-                attr!("label","Legend"),
-                subgraph!(
-                    "cluster_legend_launch";attr!("label","launch"),
-                    node!("legend_launch";attr!("label","\"\""),attr!("shape","box"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
-                ),
-                subgraph!(
-                    "cluster_legend_buffer";attr!("label","buffer"),
-                    node!("legend_buffer";attr!("label","\"\""),attr!("shape","invhouse"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
-                ),
-                subgraph!(
-                    "cluster_legend_junction";attr!("label","junction"),
-                    node!("legend_junction";attr!("label","\"\""),attr!("shape","oval"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
-                ),
-                subgraph!(
-                    "cluster_legend_faucet";attr!("label","faucet"),
-                    node!("legend_faucet";attr!("label","\"\""),attr!("shape","trapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
-                ),
-                subgraph!(
-                    "cluster_legend_drain";attr!("label","drain"),
-                    node!("legend_drain";attr!("label","\"\""),attr!("shape","invtrapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
-                )
-            )
-        )
-    );
+    Subgraph {
+        id: id!("cluster_diagram"),
+        stmts
+    }
 
-    let mut ctx = PrinterContext::default();
-    Ok(g.print(&mut ctx))
 }
 
-
+pub fn get_legend() -> Subgraph {
+    subgraph!(
+        "cluster_holder_legend";
+        attr!("color","white"),
+        attr!("label","\"\""),
+        subgraph!(
+            "cluster_legend";
+            attr!("color","black"),
+            attr!("label","Legend"),
+            subgraph!(
+                "cluster_legend_launch";attr!("label","launch"),
+                node!("legend_launch";attr!("label","\"\""),attr!("shape","box"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+            ),
+            subgraph!(
+                "cluster_legend_buffer";attr!("label","buffer"),
+                node!("legend_buffer";attr!("label","\"\""),attr!("shape","invhouse"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+            ),
+            subgraph!(
+                "cluster_legend_junction";attr!("label","junction"),
+                node!("legend_junction";attr!("label","\"\""),attr!("shape","oval"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+            ),
+            subgraph!(
+                "cluster_legend_faucet";attr!("label","faucet"),
+                node!("legend_faucet";attr!("label","\"\""),attr!("shape","trapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+            ),
+            subgraph!(
+                "cluster_legend_drain";attr!("label","drain"),
+                node!("legend_drain";attr!("label","\"\""),attr!("shape","invtrapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+            )
+        )
+    )
+}

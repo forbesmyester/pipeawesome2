@@ -1,5 +1,4 @@
-use pipeawesome2::graph::convert_connection_components_fold;
-use pipeawesome2::graph::convert_connection_to_graph_connection;
+use pipeawesome2::graph;
 use pipeawesome2::config::FaucetConfig;
 use pipeawesome2::junction::Junction;
 use pipeawesome2::motion::Push;
@@ -12,7 +11,6 @@ use pipeawesome2::config::InputPort;
 use pipeawesome2::config::ComponentType;
 use std::collections::HashSet;
 use pipeawesome2::waiter::Waiter;
-use pipeawesome2::graph::get_graph;
 use pipeawesome2::buffer::Buffer;
 use pipeawesome2::launch::Launch;
 use pipeawesome2::config::Connection;
@@ -82,6 +80,8 @@ fn get_clap_app() -> App<'static, 'static> {
         .subcommand(
             SubCommand::with_name("graph")
                 .arg(get_required_arg_with("config", "The config file to read, \"-\" for STDIN. If not specified it will be blank", "FILENAME"))
+                .arg(Arg::with_name("diagram-only").short("d").help("Sets whether to only draw the digram"))
+                .arg(Arg::with_name("legend-only").short("l").help("Sets whether to only draw the legend"))
                 .arg(config_format())
             )
 
@@ -170,6 +170,13 @@ struct UserConfigOptionBase {
 }
 
 #[derive(Debug)]
+enum GraphMode {
+    LegendOnly,
+    DiagramOnly,
+    Full
+}
+
+#[derive(Debug)]
 enum UserRequest {
     LaunchCommand {
         base_options: UserConfigOptionBase,
@@ -206,7 +213,11 @@ enum UserRequest {
     },
     ConfigLintShow { config_in: String, config_format: ConfigFormat },
     Process { config_in: String, config_format: ConfigFormat },
-    Graph { config_in: String, config_format: ConfigFormat },
+    Graph {
+        config_in: String,
+        config_format: ConfigFormat,
+        mode: GraphMode
+    },
 }
 
 
@@ -325,7 +336,20 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
                 Ok(UserRequest::Process { config_format: get_config_format(first_sub_command)?, config_in: get_config_in(first_sub_command) })
             },
             (_, ["graph"]) => {
-                Ok(UserRequest::Graph { config_format: get_config_format(first_sub_command)?, config_in: get_config_in(first_sub_command) })
+
+                let legend_only = first_sub_command.map(|fsc| { fsc.occurrences_of("legend-only") }).unwrap_or(0) > 0;
+                let diagram_only = first_sub_command.map(|fsc| { fsc.occurrences_of("diagram-only") }).unwrap_or(0) > 0;
+                let mode = match (legend_only, diagram_only) {
+                    (true, false) => GraphMode::LegendOnly,
+                    (false, true) => GraphMode::DiagramOnly,
+                    _ => GraphMode::Full
+                };
+
+                Ok(UserRequest::Graph {
+                    config_format: get_config_format(first_sub_command)?,
+                    config_in: get_config_in(first_sub_command),
+                    mode,
+                })
             },
             (_, ["config", "lint"]) => {
                 Ok(UserRequest::ConfigLintShow { config_format: get_config_format(first_sub_command)?, config_in: get_config_in(first_sub_command) })
@@ -473,7 +497,7 @@ fn result_flatten<X>(x: Result<Result<X, String>, String>) -> Result<X, String> 
 enum UserResponse {
     Config(Config),
     Process(Config),
-    Graph(Config),
+    Graph((Config, GraphMode)),
 }
 
 
@@ -536,7 +560,7 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
             }
             return Err(format!("Process {}", errs.join("\n * ")));
         },
-        Ok(UserRequest::Graph { config_in, config_format }) => {
+        Ok(UserRequest::Graph { mode, config_in, config_format }) => {
             let mut config = read_config(&config_format, &config_in)?;
             let errs = Config::lint(&mut config).into_iter()
                 .filter(|lint_err| match lint_err {
@@ -545,7 +569,7 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
                 })
                 .map(|c| c.to_string()).collect::<Vec<String>>();
             if errs.is_empty() {
-                return Ok(config).map(UserResponse::Graph);
+                return Ok(config).map(|config| { UserResponse::Graph((config, mode)) });
             }
             return Err(format!("Process {}", errs.join("\n * ")));
         },
@@ -555,18 +579,14 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
 
 fn main() {
 
-    let app = get_clap_app();
-    let matches = app.get_matches();
+    let matches = get_clap_app().get_matches();
 
-    let user_action = get_user_config_action(&matches);
-    let new_config = process_user_config_action(user_action);
-
-    let r = match new_config {
+    let r = match process_user_config_action(get_user_config_action(&matches)) {
         Ok(UserResponse::Config(new_cfg)) => {
             serde_json::to_string(&new_cfg).map_err(|_x| "Could not serialize new Config".to_string())
         },
-        Ok(UserResponse::Process(new_config)) => {
-            match get_waiter(new_config) {
+        Ok(UserResponse::Process(process_config)) => {
+            match get_waiter(process_config) {
                 Ok(mut waiter) => {
                     async_std::task::block_on(waiter.start())
                         .map_err(|err| format!("{:?}", err))
@@ -575,27 +595,34 @@ fn main() {
                 Err(x) => Err(x),
             }
         },
-        Ok(UserResponse::Graph(new_config)) => {
-            let connections = new_config.connection.values().fold(
+        Ok(UserResponse::Graph(graph_config)) => {
+            let (config, mode) = graph_config;
+            let connections = config.connection.values().fold(
                 vec![],
                 |acc, deser_conn| {
                     let conns = Config::quick_deserialized_connection_to_connection(deser_conn);
-                    convert_connection_to_graph_connection(acc, conns)
+                    graph::convert_connection_to_graph_connection(acc, conns)
                 }
             );
-            let components = new_config.connection.values().fold(
+            let components = config.connection.values().fold(
                 HashMap::new(),
                 |acc, deser_conn| {
                     let conns = Config::quick_deserialized_connection_to_connection(deser_conn);
-                    convert_connection_components_fold(acc, conns)
+                    graph::convert_connection_components_fold(acc, conns)
                 }
             );
-            match get_graph(components, connections) {
-                Ok(mut graph) => {
-                    Ok(format!("{}", graph))
+            let to_draw = match mode {
+                GraphMode::Full => {
+                    vec![graph::get_legend(), graph::get_diagram(components, connections)]
                 }
-                Err(x) => Err(x),
-            }
+                GraphMode::DiagramOnly => {
+                    vec![graph::get_diagram(components, connections)]
+                }
+                GraphMode::LegendOnly => {
+                    vec![graph::get_legend()]
+                }
+            };
+            Ok(graph::get_graph(to_draw))
         },
         Err(msg) => Err(msg)
     };
