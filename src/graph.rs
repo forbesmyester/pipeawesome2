@@ -145,7 +145,7 @@ pub fn get_diagram(components: HashMap<&ComponentType, HashSet<&str>>, connectio
     stmts.append(&mut edgs);
 
     Subgraph {
-        id: id!("cluster_diagram"),
+        id: id!("diagram"),
         stmts
     }
 
@@ -153,33 +153,28 @@ pub fn get_diagram(components: HashMap<&ComponentType, HashSet<&str>>, connectio
 
 pub fn get_legend() -> Subgraph {
     subgraph!(
-        "cluster_holder_legend";
-        attr!("color","white"),
-        attr!("label","\"\""),
+        "cluster_legend";
+        attr!("color","black"),
+        attr!("label","Legend"),
         subgraph!(
-            "cluster_legend";
-            attr!("color","black"),
-            attr!("label","Legend"),
-            subgraph!(
-                "cluster_legend_launch";attr!("label","launch"),
-                node!("legend_launch";attr!("label","\"\""),attr!("shape","box"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
-            ),
-            subgraph!(
-                "cluster_legend_buffer";attr!("label","buffer"),
-                node!("legend_buffer";attr!("label","\"\""),attr!("shape","invhouse"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
-            ),
-            subgraph!(
-                "cluster_legend_junction";attr!("label","junction"),
-                node!("legend_junction";attr!("label","\"\""),attr!("shape","oval"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
-            ),
-            subgraph!(
-                "cluster_legend_faucet";attr!("label","faucet"),
-                node!("legend_faucet";attr!("label","\"\""),attr!("shape","trapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
-            ),
-            subgraph!(
-                "cluster_legend_drain";attr!("label","drain"),
-                node!("legend_drain";attr!("label","\"\""),attr!("shape","invtrapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
-            )
+            "cluster_legend_launch";attr!("label","launch"),
+            node!("legend_launch";attr!("label","\"\""),attr!("shape","box"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+        ),
+        subgraph!(
+            "cluster_legend_buffer";attr!("label","buffer"),
+            node!("legend_buffer";attr!("label","\"\""),attr!("shape","invhouse"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+        ),
+        subgraph!(
+            "cluster_legend_junction";attr!("label","junction"),
+            node!("legend_junction";attr!("label","\"\""),attr!("shape","oval"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+        ),
+        subgraph!(
+            "cluster_legend_faucet";attr!("label","faucet"),
+            node!("legend_faucet";attr!("label","\"\""),attr!("shape","trapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+        ),
+        subgraph!(
+            "cluster_legend_drain";attr!("label","drain"),
+            node!("legend_drain";attr!("label","\"\""),attr!("shape","invtrapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
         )
     )
 }

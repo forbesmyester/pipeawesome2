@@ -80,8 +80,8 @@ fn get_clap_app() -> App<'static, 'static> {
         .subcommand(
             SubCommand::with_name("graph")
                 .arg(get_required_arg_with("config", "The config file to read, \"-\" for STDIN. If not specified it will be blank", "FILENAME"))
-                .arg(Arg::with_name("diagram-only").short("d").help("Sets whether to only draw the digram"))
-                .arg(Arg::with_name("legend-only").short("l").help("Sets whether to only draw the legend"))
+                .arg(Arg::with_name("diagram-only").long("diagram-only").short("d").help("Sets whether to only draw the digram"))
+                .arg(Arg::with_name("legend-only").long("legend-only").short("l").help("Sets whether to only draw the legend"))
                 .arg(config_format())
             )
 
