@@ -78,7 +78,7 @@ pub fn get_graph(subgraph: Vec<Subgraph>) -> String {
 
     let stmts = subgraph.into_iter().map(|sg| { Stmt::Subgraph(sg) }).collect();
 
-    let graph = Graph::Graph {
+    let graph = Graph::DiGraph {
         id: Id::Plain("g_get_graph".to_string()),
         strict: true,
         stmts
