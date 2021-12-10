@@ -694,8 +694,8 @@ fn test_lint() {
     println!("{:?}", config);
     assert_eq!(
         HashSet::<_>::from_iter([
-            ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "execution.drain".to_string(), component_type: ComponentType::Drain, component_name: "plug".to_string() },
-            ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "flow.launch".to_string(), component_type: ComponentType::Launch, component_name: "exit_filter_adult".to_string() },
+            ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "drain".to_string(), component_type: ComponentType::Drain, component_name: "plug".to_string() },
+            ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "launch".to_string(), component_type: ComponentType::Launch, component_name: "exit_filter_adult".to_string() },
         ]),
         Config::lint(&mut config)
     );
