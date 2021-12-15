@@ -3,7 +3,7 @@ use crate::connectable::ConnectableAddOutputError;
 use crate::connectable::OutputPort;
 use crate::connectable::Connectable;
 use async_std::channel::bounded;
-use crate::motion::motion_close;
+use crate::motion;
 use crate::utils::{ remove_vec_vec, remove_vec_vec_index };
 
 use super::motion::{ MotionResult, MotionNotifications, Pull, Push, };
@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use crate::back_off::BackOff;
 
 pub struct Junction {
+    id: usize,
     stdout_size: usize,
     started: bool,
     stdout: Vec<Push>,
@@ -21,8 +22,9 @@ pub struct Junction {
 
 #[allow(clippy::new_without_default)]
 impl Junction {
-    pub fn new() -> Junction {
+    pub fn new(id: usize) -> Junction {
         Junction {
+            id,
             stdout_size: 8,
             started: false,
             stdin: vec![],
@@ -64,7 +66,7 @@ impl Junction {
         let mut read_count = 0;
 
         for (si_index, mut si) in self.stdin.iter_mut().enumerate() {
-            let motion_one_results = crate::motion::motion_one(
+            let motion_one_results = motion::motion_worker(
                 &mut si,
                 notifications,
                 &mut self.stdout,
@@ -87,7 +89,7 @@ impl Junction {
         remove_vec_vec(&mut self.stdin);
         if self.stdin.is_empty() {
             for out in self.stdout.iter_mut() {
-                motion_close(out).await?;
+                motion::motion_close(out).await?;
             }
             return MotionResult::Ok((true, read_count));
         }
@@ -95,6 +97,7 @@ impl Junction {
             false => back_off.wait().await,
             true => back_off.reset(),
         };
+
         MotionResult::Ok((false, read_count))
     }
 
@@ -105,8 +108,8 @@ impl Connectable for Junction {
 
     fn add_output(&mut self, _port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout.push(Push::IoSender(child_stdout_push_channel));
-        Ok(Pull::Receiver(stdout_io_reciever_channel))
+        self.stdout.push(Push::IoSender(self.id, child_stdout_push_channel));
+        Ok(Pull::Receiver(self.id, stdout_io_reciever_channel))
     }
 
     fn add_input(&mut self, pull: Pull, priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
@@ -136,7 +139,11 @@ impl StartableControl for Junction {
                     return Ok(read_count + n);
                 }
                 Ok((false, n)) => { read_count += n }
-                Err(e) => { return MotionResult::Err(e); }
+                Err(e) => {
+                    println!("ERR");
+                    self.stdin.clear();
+                    return MotionResult::Err(e);
+                }
             }
         }
 
@@ -148,6 +155,8 @@ impl StartableControl for Junction {
 
 #[test]
 fn do_stuff() {
+
+    use crate::motion::IOData;
 
     pub async fn test_junction_impl() -> MotionResult<usize>  {
 
@@ -180,11 +189,11 @@ fn do_stuff() {
         // chan_0_1_snd.close();
         // chan_1_0_snd.close();
 
-        let pull_0_0 = Pull::Receiver(chan_0_0_rcv);
-        let pull_0_1 = Pull::Receiver(chan_0_1_rcv);
-        let pull_1_0 = Pull::Receiver(chan_1_0_rcv);
+        let pull_0_0 = Pull::Receiver(0, chan_0_0_rcv);
+        let pull_0_1 = Pull::Receiver(0, chan_0_1_rcv);
+        let pull_1_0 = Pull::Receiver(0, chan_1_0_rcv);
 
-        let mut junction = Junction::new();
+        let mut junction = Junction::new(0);
         junction.set_stdout_size(8);
         junction.add_input(pull_0_0, 0).unwrap();
         junction.add_input(pull_0_1, 0).unwrap();

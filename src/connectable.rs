@@ -8,7 +8,8 @@ pub enum OutputPort {
     Err,
     Out,
     Exit,
-    Size
+    // Size,
+    Overflow,
 }
 
 
@@ -17,7 +18,6 @@ pub enum OutputPort {
 pub enum ConnectableAddOutputError {
     AlreadyAllocated(OutputPort),
     UnsupportedPort(OutputPort),
-    UnsupportedForControl
 }
 
 #[derive(Debug)]
@@ -36,10 +36,10 @@ pub enum ConnectableErrorSource {
 
 #[derive(Debug)]
 pub enum ConnectableError {
-    AddInput(ConnectableErrorSource, ConnectableAddInputError),
-    AddOutput(ConnectableErrorSource, ConnectableAddOutputError),
-    CouldNotFindSourceComponent(ConnectableErrorSource),
-    CouldNotFindDestinationComponent(ConnectableErrorSource),
+    AddInput(usize, ConnectableAddInputError),
+    AddOutput(usize, ConnectableAddOutputError),
+    CouldNotFindSourceComponent(usize),
+    CouldNotFindDestinationComponent(usize),
 }
 
 impl std::fmt::Display for ConnectableError {

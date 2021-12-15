@@ -3,11 +3,12 @@ use crate::connectable::OutputPort;
 use crate::connectable::ConnectableAddOutputError;
 use crate::connectable::ConnectableAddInputError;
 use async_std::channel::{SendError, Receiver, bounded};
-use super::motion::{ MotionResult, MotionNotifications, Pull, Push, motion_close };
+use super::motion::{ MotionResult, MotionNotifications, Pull, Push, motion_close, motion_worker };
 use crate::startable_control::StartableControl;
 use async_trait::async_trait;
 
 pub struct Faucet {
+    id: usize,
     started: bool,
     stdout_size: usize,
     stdout: Vec<Push>,
@@ -18,8 +19,9 @@ pub struct Faucet {
 impl Faucet {
 
 
-    pub fn new(pull: Pull) -> Faucet {
+    pub fn new(id: usize, pull: Pull) -> Faucet {
         Faucet {
+            id,
             started: false,
             stdout_size: 8,
             stdin: vec![pull],
@@ -57,8 +59,8 @@ impl Connectable for Faucet {
             return Err(ConnectableAddOutputError::AlreadyAllocated(port));
         }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout.push(Push::IoSender(child_stdout_push_channel));
-        Ok(Pull::Receiver(stdout_io_reciever_channel))
+        self.stdout.push(Push::IoSender(self.id, child_stdout_push_channel));
+        Ok(Pull::Receiver(self.id, stdout_io_reciever_channel))
     }
 
     fn add_input(&mut self, _pull: Pull, _unused_priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
@@ -88,7 +90,7 @@ impl StartableControl for Faucet {
         }
 
         loop {
-            let r = crate::motion::motion_one(
+            let r = motion_worker(
                 &mut self.stdin,
                 &mut notifications,
                 &mut self.stdout,
@@ -149,7 +151,7 @@ fn do_stuff() {
 
         async fn read_data_item(output: &mut Pull) -> Result<(IOData, Instant), RecvError> {
             match output {
-                Pull::Receiver(rcv) => {
+                Pull::Receiver(0, rcv) => {
                     rcv.recv().await.map(|x| (x, Instant::now()))
                 },
                 _ => Err(RecvError),
@@ -200,9 +202,9 @@ fn do_stuff() {
         };
 
         let (mut input_chan_snd, input_chan_rcv) = bounded(8);
-        let input = Pull::Receiver(input_chan_rcv);
+        let input = Pull::Receiver(0, input_chan_rcv);
 
-        let mut tap = Faucet::new(input);
+        let mut tap = Faucet::new(0, input);
         let mut tapcontrol = tap.get_control();
         tap.set_stdout_size(1);
         let output_1 = tap.add_output(OutputPort::Out).unwrap();

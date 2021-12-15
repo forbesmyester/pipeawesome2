@@ -1,4 +1,4 @@
-use crate::config::{Config, DeserializedConnection };
+use crate::config::{Config, DeserializedConnection};
 use crate::config::FaucetConfig;
 use crate::motion::Push;
 use crate::motion::Pull;
@@ -32,16 +32,14 @@ struct FaucetSettingsCapture {
 }
 
 
-pub struct JoinFrom<'a> {
-    pub component_type: ComponentType,
-    pub component_name: &'a str,
+struct JoinFrom {
+    pub component_id: usize,
     pub output_port: OutputPort,
 }
 
 
-pub struct JoinTo<'a> {
-    pub component_type: ComponentType,
-    pub component_name: &'a str,
+struct JoinTo {
+    pub component_id: usize,
     pub input_priority: isize,
 }
 
@@ -119,6 +117,9 @@ pub struct Waiter {
     buffer: HashMap<String, Buffer>,
     drain: HashMap<String, Drain>,
     faucet_settings: HashMap<String, FaucetSettings>,
+    id: usize,
+    component_type_name_to_id: HashMap<ComponentType, HashMap<String, usize>>,
+    id_to_component_type_name: HashMap<usize, (ComponentType, String)>,
 }
 
 
@@ -136,6 +137,12 @@ pub enum WaiterError {
 impl Waiter {
 
     pub fn new() -> Waiter {
+        let mut hm: HashMap<ComponentType, HashMap<String, usize>> = HashMap::new();
+        hm.insert(ComponentType::Buffer, HashMap::new());
+        hm.insert(ComponentType::Drain, HashMap::new());
+        hm.insert(ComponentType::Faucet, HashMap::new());
+        hm.insert(ComponentType::Junction, HashMap::new());
+        hm.insert(ComponentType::Launch, HashMap::new());
         Waiter {
             faucet: HashMap::new(),
             launch: HashMap::new(),
@@ -143,66 +150,85 @@ impl Waiter {
             buffer: HashMap::new(),
             drain: HashMap::new(),
             faucet_settings: HashMap::new(),
+            id: 0,
+            component_type_name_to_id: hm,
+            id_to_component_type_name: HashMap::new(),
         }
     }
 
 
-    fn get_src_pull(&mut self, src: JoinFrom) -> Result<Pull, ConnectableError> {
+    fn incr_id(&mut self, component_type: ComponentType, name: String) -> usize {
+        self.id_to_component_type_name.insert(self.id, (component_type, name.clone()));
+        let hm = self.component_type_name_to_id.get_mut(&component_type).unwrap();
+        let inner_entry = hm.entry(name.clone());
+        inner_entry.or_insert(self.id);
+        self.id = self.id + 1;
+        self.id - 1
+    }
 
-        let error_src = ConnectableErrorSource::Source(src.component_type.clone(), src.component_name.to_string());
 
-        let r = match src {
-            JoinFrom { component_type: ComponentType::Faucet, component_name, output_port } => {
+    fn get_id(&self, component_type: &ComponentType, component_name: &str) -> Option<usize> {
+        self.component_type_name_to_id.get(component_type).map(|hm| hm.get(component_name).map(|v| *v)).flatten()
+    }
+
+
+    fn get_src_pull(&mut self, src_id: usize, output_port: OutputPort) -> Result<Pull, ConnectableError> {
+
+        let r = match self.id_to_component_type_name.get(&src_id) {
+            Some((ComponentType::Faucet, component_name)) => {
                 self.faucet.get_mut(component_name).map(|x| x.add_output(output_port))
             },
-            JoinFrom { component_type: ComponentType::Launch, component_name, output_port } => {
+            Some((ComponentType::Launch, component_name)) => {
                 self.launch.get_mut(component_name).map(|x| x.add_output(output_port))
             },
-            JoinFrom { component_type: ComponentType::Junction, component_name, output_port } => {
+            Some((ComponentType::Junction, component_name)) => {
                 self.junction.get_mut(component_name).map(|x| x.add_output(output_port))
             },
-            JoinFrom { component_type: ComponentType::Buffer, component_name, output_port } => {
+            Some((ComponentType::Buffer, component_name)) => {
                 self.buffer.get_mut(component_name).map(|x| x.add_output(output_port))
             },
-            JoinFrom { component_type: ComponentType::Drain, component_name, output_port } => {
+            Some((ComponentType::Drain, component_name,)) => {
                 self.drain.get_mut(component_name).map(|x| x.add_output(output_port))
             },
+            None => None,
         };
 
         match r {
-            None => Err(ConnectableError::CouldNotFindSourceComponent(error_src)),
-            Some(Err(x)) => Err(ConnectableError::AddOutput(error_src, x)),
+            None => Err(ConnectableError::CouldNotFindSourceComponent(src_id)),
+            Some(Err(x)) => Err(ConnectableError::AddOutput(src_id, x)),
             Some(Ok(x)) => Ok(x),
         }
     }
 
-    pub fn join(&mut self, src: JoinFrom, dst: JoinTo) -> Result<(), ConnectableError> {
+    pub fn join(&mut self, (src_id, output_port) : (usize, OutputPort), (dst_id, input_port) : (usize, InputPort)) -> Result<(), ConnectableError> {
 
-        let error_dst = ConnectableErrorSource::Source(dst.component_type.clone(), dst.component_name.to_string());
+        let pull = self.get_src_pull(src_id, output_port)?;
+        let input_priority = match input_port {
+            InputPort::In(n) => n
+        };
 
-        let pull = self.get_src_pull(src)?;
-
-        let res = match dst {
-            JoinTo { component_type: ComponentType::Faucet, component_name, input_priority } => {
+        let res = match self.id_to_component_type_name.get(&dst_id) {
+            Some((ComponentType::Faucet, component_name)) => {
                 self.faucet.get_mut(component_name).map(|x| x.add_input(pull, input_priority))
             },
-            JoinTo { component_type: ComponentType::Launch, component_name, input_priority } => {
+            Some((ComponentType::Launch, component_name)) => {
                 self.launch.get_mut(component_name).map(|x| x.add_input(pull, input_priority))
             },
-            JoinTo { component_type: ComponentType::Junction, component_name, input_priority } => {
+            Some((ComponentType::Junction, component_name)) => {
                 self.junction.get_mut(component_name).map(|x| x.add_input(pull, input_priority))
             },
-            JoinTo { component_type: ComponentType::Buffer, component_name, input_priority } => {
+            Some((ComponentType::Buffer, component_name)) => {
                 self.buffer.get_mut(component_name).map(|x| x.add_input(pull, input_priority))
             },
-            JoinTo { component_type: ComponentType::Drain, component_name, input_priority } => {
+            Some((ComponentType::Drain, component_name)) => {
                 self.drain.get_mut(component_name).map(|x| x.add_input(pull, input_priority))
             },
+            None => None,
         };
 
         match res {
-            None => Err(ConnectableError::CouldNotFindDestinationComponent(error_dst)),
-            Some(Err(x)) => Err(ConnectableError::AddInput(error_dst, x)),
+            None => Err(ConnectableError::CouldNotFindDestinationComponent(dst_id)),
+            Some(Err(x)) => Err(ConnectableError::AddInput(dst_id, x)),
             Some(Ok(x)) => Ok(x),
         }
 
@@ -340,105 +366,113 @@ impl Waiter {
 }
 
 
-struct CreateSpec<'a> {
-    component_type: &'a ComponentType,
-    component_name: &'a String,
+#[derive(Debug)]
+struct CreateSpec {
+    component_type: ComponentType,
+    component_name: String,
+    input_port: Option<InputPort>,
+    output_port: Option<OutputPort>,
+    is_end_connection: bool,
 }
 
-fn get_create_spec(connection: &Connection) -> CreateSpec {
+fn get_create_spec(connection: Connection) -> CreateSpec {
     match connection {
-        Connection::MiddleConnection { component_type, component_name, .. } => CreateSpec { component_type, component_name },
-        Connection::StartConnection { component_type, component_name, .. } => CreateSpec { component_type, component_name },
-        Connection::EndConnection { component_type, component_name, .. } => CreateSpec { component_type, component_name },
+        Connection::MiddleConnection { component_type, component_name, input_port, output_port } => CreateSpec {
+            component_type,
+            component_name,
+            input_port: Some(input_port),
+            output_port: Some(output_port),
+            is_end_connection: false,
+        },
+        Connection::StartConnection { component_type, component_name, output_port } => CreateSpec {
+            component_type,
+            component_name,
+            input_port: None,
+            output_port: Some(output_port),
+            is_end_connection: false,
+        },
+        Connection::EndConnection { component_type, component_name, input_port  } => CreateSpec {
+            component_type,
+            component_name,
+            input_port: Some(input_port),
+            output_port: None,
+            is_end_connection: true,
+        },
     }
 }
 
-fn convert_connection_to_join_from(connection: &Connection) -> Option<JoinFrom> {
-    match connection {
-        Connection::MiddleConnection { component_type, component_name, output_port, .. } => Some(JoinFrom { component_type: *component_type, component_name: component_name, output_port: *output_port }),
-        Connection::StartConnection { component_type, component_name, output_port } => Some(JoinFrom { component_type: *component_type, component_name: component_name, output_port: *output_port }),
-        Connection::EndConnection { .. } => None,
-    }
-}
-
-fn convert_connection_to_join_to(connection: &Connection) -> Option<JoinTo> {
-    match connection {
-        Connection::MiddleConnection { component_type, component_name, input_port: InputPort::In(input_priority), .. } => Some(JoinTo { component_type: *component_type, component_name, input_priority: *input_priority }),
-        Connection::StartConnection { .. } => None,
-        Connection::EndConnection { component_type, component_name, input_port: InputPort::In(input_priority) } => Some(JoinTo { component_type: *component_type, component_name, input_priority: *input_priority })
-    }
-}
 
 pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
 
-    let mut created: HashSet<(&ComponentType, &str)> = HashSet::new();
-    let mut last: Option<&Connection> = None;
-
-    let all_connections = config.connection.iter().fold(
+    let mut config_connections: HashMap<String, DeserializedConnection> = HashMap::new();
+    std::mem::swap(&mut config.connection, &mut config_connections);
+    let all_connections = config_connections.into_iter().fold(
         Vec::new(),
         |mut acc, (_hash_key, deser_conn)| {
-            if let DeserializedConnection::Connections(v) = deser_conn {
-                acc.extend_from_slice(v);
+            if let DeserializedConnection::Connections(mut v) = deser_conn {
+                acc.append(&mut v);
                 return acc;
             }
-            panic!("Encountered DeserializedConnection::JoinString in main::get_waiter()")
+            panic!("Encountered DeserializedConnection::JoinString in waiter::get_waiter()")
         }
     );
 
     let mut waiter = Waiter::new();
 
-    async fn constructor(create_spec: &CreateSpec<'_>, config: &mut Config, w: &mut Waiter) -> Result<(), String> {
+    async fn constructor(component_type: ComponentType, component_name: String, config: &mut Config, w: &mut Waiter) -> Result<usize, String> {
 
-        match create_spec {
-            CreateSpec { component_type: ComponentType::Faucet, component_name, .. } => {
+        let id = w.incr_id(component_type, component_name.clone());
+        match component_type {
+            ComponentType::Faucet => {
                 // TODO: Figure out how to get this in...
-                let pull = match config.faucet.get(*component_name).map(|t| t.source.as_str()).unwrap_or("") {
-                    "-" => Pull::Stdin(async_std::io::stdin(), ReadSplitControl::new()),
+                let pull = match config.faucet.get(&component_name).map(|t| t.source.as_str()).unwrap_or("") {
+                    "-" => Pull::Stdin(id, async_std::io::stdin(), ReadSplitControl::new()),
                     "" => Pull::None,
                     filename => {
                         let file = async_std::fs::File::open(filename).await.map_err(|_| { format!("Could not open file: {}", filename) })?;
-                        Pull::File(file, ReadSplitControl::new())
+                        Pull::File(id, file, ReadSplitControl::new())
                     },
                 };
-                let faucet = Faucet::new(pull);
+                let faucet = Faucet::new(id, pull);
                 w.add_faucet(component_name.to_string(), faucet);
-                Ok(())
+                Ok(id)
             },
-            CreateSpec { component_type: ComponentType::Drain, component_name, .. } => {
+            ComponentType::Drain => {
                 // TODO: Figure out how to get this in...
-                let push = match config.drain.get(*component_name).map(|s| s.destination.as_str()).unwrap_or("") {
-                    "-" => Push::Stdout(async_std::io::stdout()),
-                    "_" => Push::Stderr(async_std::io::stderr()),
+                let push = match config.drain.get(&component_name).map(|s| s.destination.as_str()).unwrap_or("") {
+                    "-" => Push::Stdout(id, async_std::io::stdout()),
+                    "_" => Push::Stderr(id, async_std::io::stderr()),
                     "" => Push::None,
                     filename => {
                         let file = async_std::fs::File::create(filename).await.map_err(|_| { format!("Could not write to file: {}", filename) })?;
-                        Push::File(async_std::io::BufWriter::new(file))
+                        Push::File(id, async_std::io::BufWriter::new(file))
                     },
                 };
-                w.add_drain(component_name.to_string(), Drain::new(push));
-                Ok(())
+                w.add_drain(component_name.to_string(), Drain::new(id, push));
+                Ok(id)
             },
-            CreateSpec { component_type: ComponentType::Buffer, component_name, .. } => {
-                w.add_buffer(component_name.to_string(), Buffer::new());
-                Ok(())
+            ComponentType::Buffer => {
+                w.add_buffer(component_name.to_string(), Buffer::new(id));
+                Ok(id)
             },
-            CreateSpec { component_type: ComponentType::Junction, component_name, .. } => {
-                w.add_junction(component_name.to_string(), Junction::new());
-                Ok(())
+            ComponentType::Junction => {
+                w.add_junction(component_name.to_string(), Junction::new(id));
+                Ok(id)
             },
-            CreateSpec { component_type: ComponentType::Launch, component_name, .. } => {
-                if let Some(cfg) = config.launch.remove(*component_name) {
+            ComponentType::Launch => {
+                if let Some(cfg) = config.launch.remove(&component_name) {
                     if cfg.command.is_none() {
                         return Err(format!("Launch '{}' did not have a command specified", component_name));
                     }
                     let launch: Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String> = Launch::new(
+                        id,
                         if cfg.env.is_empty() { None } else { Some(cfg.env) },
                         cfg.path,
                         cfg.command.ok_or(format!("Launch '{}' did not have a command specified", component_name))?,
                         if cfg.arg.is_empty() { None } else { Some(cfg.arg) }
                     );
                     w.add_launch(component_name.to_string(), launch);
-                    return Ok(());
+                    return Ok(id);
                 }
                 Err(format!("Could not find configuration for Launch {}", component_name))
             }
@@ -446,29 +480,37 @@ pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
     }
 
 
-    for connection in all_connections.iter() {
-        let create_spec = get_create_spec(connection);
+    let mut last: Option<(usize, OutputPort)> = None;
+    for connection in all_connections.into_iter() {
 
-        if !created.contains(&(create_spec.component_type, create_spec.component_name)) {
-            async_std::task::block_on(constructor(&create_spec, &mut config, &mut waiter))?;
-            created.insert((create_spec.component_type, create_spec.component_name));
-        }
+        let mut create_spec = get_create_spec(connection);
 
-        if let Some(last_connection) = last {
-            let err = match (convert_connection_to_join_from(last_connection), convert_connection_to_join_to(connection)) {
-                (Some(join_component_from), Some(join_component_to)) => {
-                    waiter.join(join_component_from, join_component_to).map_err(|c| format!("{}", c))
-                },
-                _ => Err(format!("There should have been a connection between {:?} and {:?}", last_connection, connection))
-            };
-            if let Err(err_msg) = err {
-                return Err(err_msg);
+        let dst_id = match waiter.get_id(&create_spec.component_type, &create_spec.component_name) {
+            None => {
+                let mut dst_component_type = ComponentType::Buffer;
+                let mut dst_component_name = "".to_string();
+                std::mem::swap(&mut create_spec.component_name, &mut dst_component_name);
+                std::mem::swap(&mut create_spec.component_type, &mut dst_component_type);
+                async_std::task::block_on(constructor(dst_component_type, dst_component_name, &mut config, &mut waiter))?
+            },
+            Some(id) => id
+        };
+
+        if let Some((src_id, src_output_port)) = last {
+
+            let mut dst_input_port = Some(InputPort::In(0));
+            std::mem::swap(&mut create_spec.input_port, &mut dst_input_port);
+
+            if let Some(dst_input_port) = dst_input_port {
+                waiter.join((src_id, src_output_port), (dst_id, dst_input_port)).map_err(|e| format!("{:?}", e))?;
+            } else {
+                panic!("HOW!");
             }
         }
 
-        last = Some(connection);
-        if let Connection::EndConnection { .. } = connection {
-            last = None;
+        last = None;
+        if let Some(create_spec_output_port) = create_spec.output_port {
+            last = Some((dst_id, create_spec_output_port));
         }
     }
 
@@ -481,4 +523,5 @@ pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
     Ok(waiter)
 
 }
+
 

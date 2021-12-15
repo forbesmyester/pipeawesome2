@@ -18,6 +18,7 @@ use async_trait::async_trait;
 pub struct BufferSizeMessage(pub usize);
 
 pub struct Buffer {
+    id: usize,
     stdout_size: usize,
     stdout: Option<Push>,
     stdin: Option<Pull>,
@@ -30,8 +31,8 @@ impl Connectable for Buffer {
     fn add_output(&mut self, port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
         if self.stdout.is_some() { return Err(ConnectableAddOutputError::AlreadyAllocated(port)); }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout = Some(Push::IoSender(child_stdout_push_channel));
-        Ok(Pull::Receiver(stdout_io_reciever_channel))
+        self.stdout = Some(Push::IoSender(self.id, child_stdout_push_channel));
+        Ok(Pull::Receiver(self.id, stdout_io_reciever_channel))
     }
 
     fn add_input(&mut self, pull: Pull, unused_priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
@@ -50,8 +51,9 @@ impl Connectable for Buffer {
 
 #[allow(clippy::new_without_default)]
 impl Buffer {
-    pub fn new() -> Buffer {
+    pub fn new(id: usize) -> Buffer {
         Buffer {
+            id,
             stdout_size: 8,
             stdin: None,
             stdout: None,
@@ -80,18 +82,18 @@ impl StartableControl for Buffer {
         let (monitor_i_snd, monitor_i_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
         let (monitor_o_snd, monitor_o_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
 
-        let push_a = vec![Push::Sender(unbounded_snd)];
-        let pull_b = vec![Pull::Receiver(unbounded_rcv)];
+        let push_a = Push::Sender(0, unbounded_snd);
+        let pull_b = Pull::Receiver(0, unbounded_rcv);
 
         let r_a = motion(
-            vec![std::mem::take(&mut self.stdin).unwrap()],
+            std::mem::take(&mut self.stdin).ok_or(MotionError::NoneError)?,
             MotionNotifications::written(monitor_i_snd),
             push_a
         );
         let r_b = motion(
             pull_b,
             MotionNotifications::read(monitor_o_snd),
-            vec![std::mem::take(&mut self.stdout).unwrap()]
+            std::mem::take(&mut self.stdout).ok_or(MotionError::NoneError)?,
         );
 
         async fn total_in_buffer(sender: Option<Sender<BufferSizeMessage>>, m_in: Receiver<MonitorMessage>, m_out: Receiver<MonitorMessage>) -> Result<usize, SendError<BufferSizeMessage>> {
@@ -170,6 +172,8 @@ impl StartableControl for Buffer {
 #[test]
 fn do_stuff() {
 
+    use crate::motion::IOData;
+
     pub async fn test_buffer_impl() -> MotionResult<usize>  {
         use std::collections::VecDeque;
 
@@ -215,8 +219,8 @@ fn do_stuff() {
             vdq
         }
 
-        let input = Pull::Mock(get_input());
-        let mut buffer = Buffer::new();
+        let input = Pull::Mock(0, get_input());
+        let mut buffer = Buffer::new(0);
         buffer.set_stdout_size(1);
         buffer.add_input(input, 0).unwrap();
         let output = buffer.add_output(OutputPort::Out).unwrap();
