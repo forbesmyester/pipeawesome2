@@ -9,7 +9,7 @@ pub enum OutputPort {
     Out,
     Exit,
     // Size,
-    Overflow,
+    // Overflow,
 }
 
 
@@ -49,7 +49,7 @@ impl std::fmt::Display for ConnectableError {
 }
 
 pub trait Connectable {
-    fn add_output(&mut self, port: OutputPort) -> Result<Pull, ConnectableAddOutputError>;
+    fn add_output(&mut self, port: OutputPort, src_id: usize, dst_id: usize) -> Result<Pull, ConnectableAddOutputError>;
     fn add_input(&mut self, pull: Pull, priority: isize) -> Result<(), ConnectableAddInputError>;
 }
 

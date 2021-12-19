@@ -1,3 +1,4 @@
+use crate::motion::Journey;
 use crate::connectable::Connectable;
 use crate::connectable::OutputPort;
 use crate::connectable::ConnectableAddOutputError;
@@ -8,7 +9,6 @@ use crate::startable_control::StartableControl;
 use async_trait::async_trait;
 
 pub struct Faucet {
-    id: usize,
     started: bool,
     stdout_size: usize,
     stdout: Vec<Push>,
@@ -19,9 +19,8 @@ pub struct Faucet {
 impl Faucet {
 
 
-    pub fn new(id: usize, pull: Pull) -> Faucet {
+    pub fn new(pull: Pull) -> Faucet {
         Faucet {
-            id,
             started: false,
             stdout_size: 8,
             stdin: vec![pull],
@@ -51,7 +50,7 @@ impl Faucet {
 
 impl Connectable for Faucet {
 
-    fn add_output(&mut self, port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
+    fn add_output(&mut self, port: OutputPort, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
         if port != OutputPort::Out {
             return Err(ConnectableAddOutputError::UnsupportedPort(port));
         }
@@ -59,8 +58,8 @@ impl Connectable for Faucet {
             return Err(ConnectableAddOutputError::AlreadyAllocated(port));
         }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout.push(Push::IoSender(self.id, child_stdout_push_channel));
-        Ok(Pull::Receiver(self.id, stdout_io_reciever_channel))
+        self.stdout.push(Push::IoSender(Journey { src: src_id, dst: dst_id }, child_stdout_push_channel));
+        Ok(Pull::Receiver(Journey { src: src_id, dst: dst_id }, stdout_io_reciever_channel))
     }
 
     fn add_input(&mut self, _pull: Pull, _unused_priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
@@ -151,7 +150,7 @@ fn do_stuff() {
 
         async fn read_data_item(output: &mut Pull) -> Result<(IOData, Instant), RecvError> {
             match output {
-                Pull::Receiver(0, rcv) => {
+                Pull::Receiver(_, rcv) => {
                     rcv.recv().await.map(|x| (x, Instant::now()))
                 },
                 _ => Err(RecvError),
@@ -202,12 +201,12 @@ fn do_stuff() {
         };
 
         let (mut input_chan_snd, input_chan_rcv) = bounded(8);
-        let input = Pull::Receiver(0, input_chan_rcv);
+        let input = Pull::Receiver(Journey { src: 0, dst: 0 }, input_chan_rcv);
 
-        let mut tap = Faucet::new(0, input);
+        let mut tap = Faucet::new(input);
         let mut tapcontrol = tap.get_control();
         tap.set_stdout_size(1);
-        let output_1 = tap.add_output(OutputPort::Out).unwrap();
+        let output_1 = tap.add_output(OutputPort::Out, 0, 0).unwrap();
 
         let w0 = tap.start();
         let w1 = write_data_1(&mut input_chan_snd, &mut tapcontrol);

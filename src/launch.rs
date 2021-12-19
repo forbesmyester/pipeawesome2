@@ -1,4 +1,6 @@
 // use pipeawesome2::motion::{Pull, MotionResult, IOData};
+use std::time::Instant;
+use crate::motion::Journey;
 use crate::connectable::ConnectableAddInputError;
 use crate::connectable::ConnectableAddOutputError;
 use crate::connectable::OutputPort;
@@ -29,8 +31,7 @@ pub struct Launch<E, P, O, A, K, V, R>
     args: Option<A>,
     stdout: Option<Push>,
     stderr: Option<Push>,
-    exit_status: Option<Sender<IOData>>,
-    overflow: Option<Push>,
+    exit_status: Option<(Journey, Sender<IOData>)>,
     stdin: Option<Pull>,
     launched: bool,
 }
@@ -45,40 +46,32 @@ impl <E: IntoIterator<Item = (K, V)>,
           R: AsRef<OsStr>,
           > Connectable for Launch<E, P, O, A, K, V, R> {
 
-    fn add_output(&mut self, port: OutputPort) -> Result<Pull, ConnectableAddOutputError> {
+    fn add_output(&mut self, port: OutputPort, src_id: usize, dst_id: usize) -> Result<Pull, ConnectableAddOutputError> {
         match port {
             OutputPort::Err => {
                 if self.stderr.is_some() {
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Err));
                 }
                 let (child_stdout_push_channel, chan_rx) = bounded(1);
-                self.stderr = Some(Push::IoSender(self.id, child_stdout_push_channel));
-                Ok(Pull::Receiver(self.id, chan_rx))
+                self.stderr = Some(Push::IoSender(Journey { src: src_id, dst: dst_id }, child_stdout_push_channel));
+                Ok(Pull::Receiver(Journey { src: src_id, dst: dst_id }, chan_rx))
             },
             OutputPort::Exit => {
                 if self.exit_status.is_some() {
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Exit));
                 }
                 let (child_exit_status_push_channel, chan_rx) = bounded(1);
-                self.exit_status = Some(child_exit_status_push_channel);
-                Ok(Pull::Receiver(self.id, chan_rx))
+                self.exit_status = Some((Journey { src: src_id, dst: dst_id }, child_exit_status_push_channel));
+                Ok(Pull::Receiver(Journey { src: src_id, dst: dst_id }, chan_rx))
             },
             OutputPort::Out => {
                 if self.stdout.is_some() {
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Out));
                 }
                 let (child_stdout_push_channel, chan_rx) = bounded(1);
-                self.stdout = Some(Push::IoSender(self.id, child_stdout_push_channel));
-                Ok(Pull::Receiver(self.id, chan_rx))
-            },
-            OutputPort::Overflow => {
-                if self.overflow.is_some() {
-                    return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Out));
-                }
-                let (child_overflow_push_channel, chan_rx) = bounded(1);
-                self.overflow = Some(Push::IoSender(self.id, child_overflow_push_channel));
-                Ok(Pull::Receiver(self.id, chan_rx))
-            },
+                self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id }, child_stdout_push_channel));
+                Ok(Pull::Receiver(Journey { src: src_id, dst: dst_id }, chan_rx))
+            }
         }
     }
 
@@ -120,7 +113,6 @@ impl <E: IntoIterator<Item = (K, V)>,
             stdout: None,
             stderr: None,
             exit_status: None,
-            overflow: None,
             command,
             launched: false,
             path,
@@ -153,9 +145,10 @@ impl <E: IntoIterator<Item = (K, V)>,
     }
 
 
-    async fn start_stream(&mut self) -> MotionResult<usize> {
+    pub async fn start(&mut self) -> MotionResult<usize> {
 
         assert!(!self.launched);
+
 
         let mut child_builder = aip::Command::new(&self.command);
 
@@ -187,16 +180,19 @@ impl <E: IntoIterator<Item = (K, V)>,
         let mut child = child_builder.spawn().unwrap();
 
         let child_stdin_push = match std::mem::take(&mut child.stdin) {
-            Some(stdin) => Push::CmdStdin(self.id, stdin),
+            Some(stdin) => {
+                let src = child_stdin_pull.journey().map(|j| j.src).unwrap_or(self.id);
+                Push::CmdStdin(Journey { src, dst: self.id }, stdin)
+            },
             None => Push::None,
         };
 
-        // TODO: Is this where we need to check if the status of the program and divert to self.overflow?
         let r_input = motion(child_stdin_pull, MotionNotifications::empty(), child_stdin_push);
 
         let (stdout_pull, stdout_push) = match (std::mem::take(&mut child.stdout), std::mem::take(&mut self.stdout)) {
             (Some(stdout), Some(push)) => {
-                let pull = Pull::CmdStdout(self.id, stdout, ReadSplitControl::new());
+                let dst = push.journey().map(|j| j.dst).unwrap_or(self.id);
+                let pull = Pull::CmdStdout(Journey { src: self.id, dst }, stdout, ReadSplitControl::new());
                 (pull, push)
             },
             _ => {
@@ -211,7 +207,8 @@ impl <E: IntoIterator<Item = (K, V)>,
 
         let (stderr_pull, stderr_push) = match (std::mem::take(&mut child.stderr), std::mem::take( &mut self.stderr)) {
             (Some(stderr), Some(push)) => {
-                let pull = Pull::CmdStderr(self.id, stderr, ReadSplitControl::new());
+                let dst = push.journey().map(|j| j.dst).unwrap_or(self.id);
+                let pull = Pull::CmdStderr(Journey { src: self.id, dst }, stderr, ReadSplitControl::new());
                 (pull, push)
             },
             _ => {
@@ -226,7 +223,7 @@ impl <E: IntoIterator<Item = (K, V)>,
 
         let r_out_prep: ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>) = r_input.join(r2).join(r3).await;
 
-        if let Some(exit_status_tx) = &mut self.exit_status {
+        if let Some((journey, exit_status_tx)) = &mut self.exit_status {
             loop {
                 let msg = match child.try_status().ok().flatten().map(|es| es.code()) {
                     Some(Some(exit_status)) => {
@@ -241,7 +238,7 @@ impl <E: IntoIterator<Item = (K, V)>,
                 };
                 match msg {
                     Some(m) => {
-                        exit_status_tx.send(m).await?;
+                        exit_status_tx.send(m).await.map_err(|e| MotionError::SendError(*journey, Instant::now(), e))?;
                         exit_status_tx.close();
                         break;
                     },
@@ -253,11 +250,9 @@ impl <E: IntoIterator<Item = (K, V)>,
         fn structure_motion_result(input: ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>)) -> MotionResult<usize> {
             match input {
                 ((MotionResult::Ok(stdin_count), MotionResult::Ok(_)), MotionResult::Ok(_)) => Ok(stdin_count),
-                ((MotionResult::Err(MotionError::WriteIOError(_err, u8vec)), MotionResult::Ok(_)), MotionResult::Ok(_)) => {
-                    println!("CAUGHT {:?}", u8vec);
-                    Err(MotionError::NoneError)
-                }
-                e => { Err(MotionError::NoneError) }
+                ((MotionResult::Err(e), _), _) => Err(e),
+                ((_, MotionResult::Err(e)), _) => Err(e),
+                ((_, _), MotionResult::Err(e)) => Err(e),
             }
         }
 
@@ -265,13 +260,6 @@ impl <E: IntoIterator<Item = (K, V)>,
 
     }
 
-
-    pub async fn start(&mut self) -> MotionResult<usize> {
-        self.start_stream().await
-    }
-
-
-    // TODO: pub async fn start_per_line(&mut self) -> MotionResult<usize>
 }
 
 

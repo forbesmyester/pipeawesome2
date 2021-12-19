@@ -1,4 +1,5 @@
 // use pipeawesome2::motion::{Pull, MotionResult, IOData};
+use crate::motion::Journey;
 use crate::connectable::OutputPort;
 use crate::connectable::ConnectableAddOutputError;
 use crate::connectable::ConnectableAddInputError;
@@ -18,7 +19,6 @@ use async_trait::async_trait;
 pub struct BufferSizeMessage(pub usize);
 
 pub struct Buffer {
-    id: usize,
     stdout_size: usize,
     stdout: Option<Push>,
     stdin: Option<Pull>,
@@ -28,11 +28,11 @@ pub struct Buffer {
 
 impl Connectable for Buffer {
 
-    fn add_output(&mut self, port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
+    fn add_output(&mut self, port: OutputPort, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
         if self.stdout.is_some() { return Err(ConnectableAddOutputError::AlreadyAllocated(port)); }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout = Some(Push::IoSender(self.id, child_stdout_push_channel));
-        Ok(Pull::Receiver(self.id, stdout_io_reciever_channel))
+        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id }, child_stdout_push_channel));
+        Ok(Pull::Receiver(Journey { src: src_id, dst: dst_id }, stdout_io_reciever_channel))
     }
 
     fn add_input(&mut self, pull: Pull, unused_priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
@@ -51,9 +51,8 @@ impl Connectable for Buffer {
 
 #[allow(clippy::new_without_default)]
 impl Buffer {
-    pub fn new(id: usize) -> Buffer {
+    pub fn new() -> Buffer {
         Buffer {
-            id,
             stdout_size: 8,
             stdin: None,
             stdout: None,
@@ -82,8 +81,8 @@ impl StartableControl for Buffer {
         let (monitor_i_snd, monitor_i_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
         let (monitor_o_snd, monitor_o_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
 
-        let push_a = Push::Sender(0, unbounded_snd);
-        let pull_b = Pull::Receiver(0, unbounded_rcv);
+        let push_a = Push::Sender(Journey { src: 0, dst: 0 }, unbounded_snd);
+        let pull_b = Pull::Receiver(Journey { src: 0, dst: 0 }, unbounded_rcv);
 
         let r_a = motion(
             std::mem::take(&mut self.stdin).ok_or(MotionError::NoneError)?,
@@ -219,11 +218,11 @@ fn do_stuff() {
             vdq
         }
 
-        let input = Pull::Mock(0, get_input());
-        let mut buffer = Buffer::new(0);
+        let input = Pull::Mock(Journey { src: 0, dst: 0 }, get_input());
+        let mut buffer = Buffer::new();
         buffer.set_stdout_size(1);
         buffer.add_input(input, 0).unwrap();
-        let output = buffer.add_output(OutputPort::Out).unwrap();
+        let output = buffer.add_output(OutputPort::Out, 0, 0).unwrap();
         let monitoring = buffer.add_buffer_size_monitor();
         let buffer_motion = buffer.start();
         match buffer_motion.join(read_data(output)).join(read_monitoring(monitoring)).await {

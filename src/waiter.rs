@@ -1,3 +1,6 @@
+use std::time::Duration;
+use std::time::Instant;
+use crate::motion::Journey;
 use crate::config::{Config, DeserializedConnection};
 use crate::config::FaucetConfig;
 use crate::motion::Push;
@@ -91,7 +94,6 @@ async fn manage_taps_from_buffers(mut faucet_settings: FaucetSettingsCapture) ->
             faucet_settings.faucet_component.resume().await.map_err(|_| WaiterError::CouldNotResume)?;
             faucet_status = FaucetStatus::Open;
         }
-        //println!("TOTAL: {:?}: {:?}", faucet_status, total);
         for tr in to_remove.into_iter().rev() {
             monitors.remove(tr);
         }
@@ -119,17 +121,61 @@ pub struct Waiter {
     faucet_settings: HashMap<String, FaucetSettings>,
     id: usize,
     component_type_name_to_id: HashMap<ComponentType, HashMap<String, usize>>,
-    id_to_component_type_name: HashMap<usize, (ComponentType, String)>,
+    component_type_name_to_id_reverse: HashMap<usize, (ComponentType, String)>,
 }
 
 
 #[derive(Debug)]
 pub enum WaiterError {
-    CausedByError(String, MotionError),
+    CausedByError(ComponentType, String, MotionError),
     SettingsForMissingFaucet(String),
-    SettingsRefersMissingBuffer(String),
+    SettingsRefersMissingBuffer(String, String),
     CouldNotPause,
     CouldNotResume,
+}
+
+
+impl WaiterError {
+
+    pub fn description(&self) -> String {
+        match self {
+            WaiterError::CausedByError(_, _, m) => format!("{}", m),
+            WaiterError::SettingsForMissingFaucet(s) => format!("There are no settings for Faucet:{}", s),
+            WaiterError::SettingsRefersMissingBuffer(f, b) => format!("Faucet {} refers to buffer {} which does not exist", f, b),
+            WaiterError::CouldNotPause => "CouldNotPause".to_string(),
+            WaiterError::CouldNotResume => "CouldNotPause".to_string(),
+        }
+    }
+
+
+    fn instant(&self) -> Option<&Instant> {
+        match self {
+            WaiterError::CausedByError(_, _, e) => e.instant(),
+            _ => None,
+        }
+    }
+
+    pub fn caused_by_error_name(&self) -> Option<&str> {
+        match self {
+            WaiterError::CausedByError(_, n, _) => Some(n),
+            _ => None,
+        }
+    }
+
+    pub fn caused_by_error_source(&self) -> Option<(&ComponentType, &String)> {
+        match self {
+            WaiterError::CausedByError(t, n, _) => Some((t, n)),
+            _ => None,
+        }
+    }
+
+    pub fn caused_by_error(&self) -> Option<&MotionError> {
+        match self {
+            WaiterError::CausedByError(_, _, e) => Some(e),
+            _ => None,
+        }
+    }
+
 }
 
 
@@ -152,13 +198,13 @@ impl Waiter {
             faucet_settings: HashMap::new(),
             id: 0,
             component_type_name_to_id: hm,
-            id_to_component_type_name: HashMap::new(),
+            component_type_name_to_id_reverse: HashMap::new(),
         }
     }
 
 
     fn incr_id(&mut self, component_type: ComponentType, name: String) -> usize {
-        self.id_to_component_type_name.insert(self.id, (component_type, name.clone()));
+        self.component_type_name_to_id_reverse.insert(self.id, (component_type, name.clone()));
         let hm = self.component_type_name_to_id.get_mut(&component_type).unwrap();
         let inner_entry = hm.entry(name.clone());
         inner_entry.or_insert(self.id);
@@ -172,23 +218,23 @@ impl Waiter {
     }
 
 
-    fn get_src_pull(&mut self, src_id: usize, output_port: OutputPort) -> Result<Pull, ConnectableError> {
+    fn get_src_pull(&mut self, src_id: usize, dst_id: usize, output_port: OutputPort) -> Result<Pull, ConnectableError> {
 
-        let r = match self.id_to_component_type_name.get(&src_id) {
+        let r = match self.component_type_name_to_id_reverse.get(&src_id) {
             Some((ComponentType::Faucet, component_name)) => {
-                self.faucet.get_mut(component_name).map(|x| x.add_output(output_port))
+                self.faucet.get_mut(component_name).map(|x| x.add_output(output_port, src_id, dst_id))
             },
             Some((ComponentType::Launch, component_name)) => {
-                self.launch.get_mut(component_name).map(|x| x.add_output(output_port))
+                self.launch.get_mut(component_name).map(|x| x.add_output(output_port, src_id, dst_id))
             },
             Some((ComponentType::Junction, component_name)) => {
-                self.junction.get_mut(component_name).map(|x| x.add_output(output_port))
+                self.junction.get_mut(component_name).map(|x| x.add_output(output_port, src_id, dst_id))
             },
             Some((ComponentType::Buffer, component_name)) => {
-                self.buffer.get_mut(component_name).map(|x| x.add_output(output_port))
+                self.buffer.get_mut(component_name).map(|x| x.add_output(output_port, src_id, dst_id))
             },
             Some((ComponentType::Drain, component_name,)) => {
-                self.drain.get_mut(component_name).map(|x| x.add_output(output_port))
+                self.drain.get_mut(component_name).map(|x| x.add_output(output_port, src_id, dst_id))
             },
             None => None,
         };
@@ -200,14 +246,18 @@ impl Waiter {
         }
     }
 
+    pub fn id_to_component_type_name(&self, id: &usize) -> Option<&(ComponentType, String)> {
+        self.component_type_name_to_id_reverse.get(id)
+    }
+
     pub fn join(&mut self, (src_id, output_port) : (usize, OutputPort), (dst_id, input_port) : (usize, InputPort)) -> Result<(), ConnectableError> {
 
-        let pull = self.get_src_pull(src_id, output_port)?;
+        let pull = self.get_src_pull(src_id, dst_id, output_port)?;
         let input_priority = match input_port {
             InputPort::In(n) => n
         };
 
-        let res = match self.id_to_component_type_name.get(&dst_id) {
+        let res = match self.component_type_name_to_id_reverse.get(&dst_id) {
             Some((ComponentType::Faucet, component_name)) => {
                 self.faucet.get_mut(component_name).map(|x| x.add_input(pull, input_priority))
             },
@@ -254,27 +304,6 @@ impl Waiter {
         self.drain.insert(name, d);
     }
 
-    pub fn get_buffer_pull(&mut self, key: String) -> Result<Option<Pull>, ConnectableAddOutputError> {
-        if let Some(x) = self.buffer.get_mut(&key) {
-            return x.add_output(OutputPort::Out).map(|b| Some(b));
-        }
-        Ok(None)
-    }
-
-    pub fn get_faucet_pull(&mut self, key: String) -> Result<Option<Pull>, ConnectableAddOutputError> {
-        if let Some(x) = self.faucet.get_mut(&key) {
-            return x.add_output(OutputPort::Out).map(|f| Some(f));
-        }
-        Ok(None)
-    }
-
-    pub fn get_launch_pull(&mut self, key: String, port: OutputPort) -> Result<Option<Pull>, ConnectableAddOutputError> {
-        if let Some(x) = self.launch.get_mut(&key) {
-            return x.add_output(port).map(|l| Some(l));
-        }
-        Ok(None)
-    }
-
     pub fn configure_faucet(&mut self, faucet_name: String, buffer_names: Vec<String>, low_watermark: usize, high_watermark: usize) -> bool {
         let has_all_buffers = buffer_names.iter().all(
             |f| self.buffer.get(f).is_some()
@@ -297,7 +326,7 @@ impl Waiter {
             let faucet_component = faucet.get_control();
             let mut buffer_size_monitors = vec![];
             for buffer_name in settings.buffer_names.iter() {
-                let buf = self.buffer.get_mut(buffer_name).ok_or_else(|| WaiterError::SettingsRefersMissingBuffer(buffer_name.to_string()))?;
+                let buf = self.buffer.get_mut(buffer_name).ok_or_else(|| WaiterError::SettingsRefersMissingBuffer(faucet_name.to_string(), buffer_name.to_string()))?;
                 buffer_size_monitors.push(buf.add_buffer_size_monitor());
             }
             faucet_settings_capture.push(
@@ -314,54 +343,70 @@ impl Waiter {
     }
 
     #[allow(clippy::many_single_char_names)]
-    pub async fn start(&mut self) -> Result<usize, WaiterError> {
+    pub async fn start(&mut self) -> Result<usize, Vec<WaiterError>> {
         use futures::future::join_all;
 
-        fn folder(acc: Result<usize, WaiterError>, cur: &mut Result<usize, WaiterError>) -> Result<usize, WaiterError> {
+        let start_instant = Instant::now();
+
+        fn folder(acc: Result<usize, Vec<WaiterError>>, cur: Result<usize, WaiterError>) -> Result<usize, Vec<WaiterError>> {
             match (acc, cur) {
-                (Ok(i), Ok(j)) => Ok(i + *j),
-                (Err(x), _) => Err(x),
-                (_, x) => {
-                    let mut y = Ok(0);
-                    std::mem::swap(x, &mut y);
-                    y
-                }
+                (Ok(i), Ok(j)) => Ok(i + j),
+                (xs, Ok(_)) => xs,
+                (Err(mut xs), Err(x)) => {
+                    xs.push(x);
+                    Err(xs)
+                },
+                (Ok(_), Err(x)) => Err(vec![x])
             }
         }
 
 
-        async fn start(name: &str, cntrl: &mut dyn StartableControl) -> Result<usize, WaiterError> {
+        async fn start(component_type: ComponentType, name: &str, cntrl: &mut dyn StartableControl) -> Result<usize, WaiterError> {
             match cntrl.start().await {
-                Err(e) => Err(WaiterError::CausedByError(name.to_string(), e)),
+                Err(e) => Err(WaiterError::CausedByError(component_type, name.to_string(), e)),
                 Ok(x) => Ok(x),
             }
         }
 
         async fn start_launch(name: &str, cntrl: &mut LaunchString) -> Result<usize, WaiterError> {
             match cntrl.start().await {
-                Err(e) => Err(WaiterError::CausedByError(name.to_string(), e)),
+                Err(e) => Err(WaiterError::CausedByError(ComponentType::Launch, name.to_string(), e)),
                 Ok(x) => Ok(x),
             }
         }
 
-        let managed_taps = join_all(self.faucet_settings()?.into_iter().map(manage_taps_from_buffers));
-        let faucets = join_all(self.faucet.iter_mut().map(|(n, f)| start(n, f)));
+        fn err_as_vec_err(e: WaiterError) -> Vec<WaiterError> {
+            vec![e]
+        }
+
+        let managed_taps = join_all(self.faucet_settings().map_err(err_as_vec_err)?.into_iter().map(manage_taps_from_buffers));
+        let faucets = join_all(self.faucet.iter_mut().map(|(n, f)| start(ComponentType::Faucet, n, f)));
         let launch = join_all(self.launch.iter_mut().map(
             |(n, l)| start_launch(n, l) )
         );
-        let junction = join_all(self.junction.iter_mut().map(|(n, j)| start(n, j)));
-        let buffers = join_all(self.buffer.iter_mut().map(|(n, b)| start(n, b)));
-        let drain = join_all(self.drain.iter_mut().map(|(n, d)| start(n, d)));
+        let junction = join_all(self.junction.iter_mut().map(|(n, j)| start(ComponentType::Junction, n, j)));
+        let buffers = join_all(self.buffer.iter_mut().map(|(n, b)| start(ComponentType::Buffer, n, b)));
+        let drain = join_all(self.drain.iter_mut().map(|(n, d)| start(ComponentType::Drain, n, d)));
 
-        let (mut m, (mut f, (mut l, (mut j, (mut b, mut d))))) = managed_taps.join(faucets.join(launch.join(junction.join(buffers.join(drain))))).await;
-        [
-            m.iter_mut().fold(Ok(0), folder),
-            f.iter_mut().fold(Ok(0), folder),
-            l.iter_mut().fold(Ok(0), folder),
-            j.iter_mut().fold(Ok(0), folder),
-            b.iter_mut().fold(Ok(0), folder),
-            d.iter_mut().fold(Ok(0), folder),
-        ].iter_mut().fold(Ok(0), folder)
+        let (mut l, (mut f, (mut m, (mut d, (mut b, mut j))))) = launch.join(faucets.join(managed_taps.join(drain.join(buffers.join(junction))))).await;
+
+        l.append(&mut f);
+        l.append(&mut m);
+        l.append(&mut d);
+        l.append(&mut b);
+        l.append(&mut j);
+
+        l.into_iter().fold(Ok(0), folder)
+            .map_err(|mut v| {
+                v.sort_by(|e1, e2| {
+                    if let (Some(i1), Some(i2)) = (e1.instant(), e2.instant()) {
+                        return i1.duration_since(start_instant).cmp(&i2.duration_since(start_instant));
+                    }
+                    std::cmp::Ordering::Equal
+                });
+                v
+            })
+
     }
 }
 
@@ -426,37 +471,37 @@ pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
             ComponentType::Faucet => {
                 // TODO: Figure out how to get this in...
                 let pull = match config.faucet.get(&component_name).map(|t| t.source.as_str()).unwrap_or("") {
-                    "-" => Pull::Stdin(id, async_std::io::stdin(), ReadSplitControl::new()),
+                    "-" => Pull::Stdin(Journey { src: id, dst: id }, async_std::io::stdin(), ReadSplitControl::new()),
                     "" => Pull::None,
                     filename => {
                         let file = async_std::fs::File::open(filename).await.map_err(|_| { format!("Could not open file: {}", filename) })?;
-                        Pull::File(id, file, ReadSplitControl::new())
+                        Pull::File(Journey { src: id, dst: id }, file, ReadSplitControl::new())
                     },
                 };
-                let faucet = Faucet::new(id, pull);
+                let faucet = Faucet::new(pull);
                 w.add_faucet(component_name.to_string(), faucet);
                 Ok(id)
             },
             ComponentType::Drain => {
                 // TODO: Figure out how to get this in...
                 let push = match config.drain.get(&component_name).map(|s| s.destination.as_str()).unwrap_or("") {
-                    "-" => Push::Stdout(id, async_std::io::stdout()),
-                    "_" => Push::Stderr(id, async_std::io::stderr()),
+                    "-" => Push::Stdout(Journey { src: id, dst: id }, async_std::io::stdout()),
+                    "_" => Push::Stderr(Journey { src: id, dst: id }, async_std::io::stderr()),
                     "" => Push::None,
                     filename => {
                         let file = async_std::fs::File::create(filename).await.map_err(|_| { format!("Could not write to file: {}", filename) })?;
-                        Push::File(id, async_std::io::BufWriter::new(file))
+                        Push::File(Journey { src: id, dst: id }, async_std::io::BufWriter::new(file))
                     },
                 };
-                w.add_drain(component_name.to_string(), Drain::new(id, push));
+                w.add_drain(component_name.to_string(), Drain::new(push));
                 Ok(id)
             },
             ComponentType::Buffer => {
-                w.add_buffer(component_name.to_string(), Buffer::new(id));
+                w.add_buffer(component_name.to_string(), Buffer::new());
                 Ok(id)
             },
             ComponentType::Junction => {
-                w.add_junction(component_name.to_string(), Junction::new(id));
+                w.add_junction(component_name.to_string(), Junction::new());
                 Ok(id)
             },
             ComponentType::Launch => {

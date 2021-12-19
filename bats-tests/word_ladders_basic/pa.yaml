@@ -1,0 +1,64 @@
+connection:
+  # input_tap: "f:input_tap  | l:input_lower_ascii | l:dict_shuf | j:input"
+  # dict: "j:input | l:dict_protocol | j:funnel"
+  # debug: "j:funnel | d:output"
+  start: "f:input | l:cat | l:only_one | j:output"
+  # test_out: "j:funnel | l:it_takes_two | j:output"
+  out_drain: "j:output | d:output"
+  # error_seek_exit: "l:it_takes_two[X] | j:output"
+  # error_seek_err: "l:it_takes_two[E] | j:output"
+  # error_seek_err2: "l:dict_protocol[X] | j:output"
+  error_seek_err3: "l:only_one[X] | j:output"
+  error_seek_err3: "l:only_one[E] | j:output"
+drain:
+  output:
+    destination: '-'
+faucet:
+  input:
+    source: '/usr/share/dict/words'
+launch:
+  cat:
+    command: "cat"
+  dict_protocol:
+    command: "awk"
+    arg:
+      - '-v'
+      - 'ID=DICT'
+      - &x |
+        {
+          print ID ": " $0
+          fflush()
+        }
+        END {
+          print ID " END:"
+          fflush()
+        }
+  only_one: { command: "head", arg: [ '-n', '10' ] }
+  start_protocol: { command: "awk", arg: [ '-v', 'ID=LADDER', *x ] }
+  dict_shuf: { command: "shuf", arg: [ '-n', 15 ] }
+  input_shuf_1: { command: "shuf", arg: [ '-n', 1 ] }
+  dict_lower_ascii: &lower_ascii { command: "grep", arg: [ '^[a-z]\{5\}$' ] }
+  input_lower_ascii: *lower_ascii
+  it_takes_two:
+    # TODO: Ensure that message that go to a command that has exited go somewhere!
+    command: "awk"
+    arg:
+      - '-F'
+      - ':'
+      - |
+        BEGIN {
+          END_COUNT=0
+          fflush()
+        }
+        {
+          print $0;
+          fflush()
+        }
+        $1 ~ /END$/ {
+          END_COUNT++
+          if (END_COUNT >= 2) {
+            print "ENDED"
+            exit
+          }
+        }
+

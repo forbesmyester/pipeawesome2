@@ -1,3 +1,7 @@
+use pipeawesome2::waiter::Waiter;
+use pipeawesome2::waiter::WaiterError;
+use pipeawesome2::config::ComponentType;
+use pipeawesome2::motion::Journey;
 use pipeawesome2::graph;
 use pipeawesome2::waiter::get_waiter;
 use pipeawesome2::config::Connection;
@@ -564,22 +568,48 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
 
 }
 
+fn waiter_error_to_string(waiter_err: WaiterError, waiter: &Waiter) -> String {
+
+    fn component_type_name_to_string(ct: &ComponentType, n: &str) -> String {
+        format!("{}:{}", ct, n)
+    }
+
+    let waiter_src: Option<(&ComponentType, &String)> = waiter_err.caused_by_error_source();
+    let motion_src: Option<&(ComponentType, String)> = waiter_err.caused_by_error().map(|x| x.journey_source()).flatten().map(|src| waiter.id_to_component_type_name(src)).flatten();
+    let motion_dst: Option<&(ComponentType, String)> = match waiter_err.caused_by_error().map(|x| x.journey()).flatten() {
+        Some(Journey { src: _, dst }) => waiter.id_to_component_type_name(dst),
+        None => None
+    };
+    let (src, dst) = match (waiter_src, motion_src, motion_dst) {
+        (_, Some(motion_src), Some(motion_dst)) => (component_type_name_to_string(&motion_src.0, &motion_src.1), component_type_name_to_string(&motion_dst.0, &motion_dst.1)),
+        (_, Some(motion_src), _) => (component_type_name_to_string(&motion_src.0, &motion_src.1), "Unknown Destination".to_string()),
+        (Some(waiter_src), _, _) => (component_type_name_to_string(waiter_src.0, waiter_src.1), "Unknown Destination".to_string()),
+        _ => ("Unknown Source".to_string(), "Unknown Destination".to_string()),
+    };
+
+    format!("{} | {} - {:?}", src, dst, waiter_err.description())
+}
+
 fn main() {
 
     let matches = get_clap_app().get_matches();
 
     let r = match process_user_config_action(get_user_config_action(&matches)) {
         Ok(UserResponse::Config(new_cfg)) => {
-            serde_json::to_string(&new_cfg).map_err(|_x| "Could not serialize new Config".to_string())
+            serde_json::to_string(&new_cfg).map_err(|_x| vec!["Could not serialize new Config".to_string()])
         },
         Ok(UserResponse::Process(process_config)) => {
             match get_waiter(process_config) {
                 Ok(mut waiter) => {
                     async_std::task::block_on(waiter.start())
-                        .map_err(|err| format!("{:?}", err))
+                        .map_err(|errs| {
+                            errs.into_iter().map(|err| {
+                                waiter_error_to_string(err, &waiter)
+                            }).collect::<Vec<String>>()
+                        })
                         .map(|_processed_count| "".to_string())
                 }
-                Err(x) => Err(x),
+                Err(x) => Err(vec![x]),
             }
         },
         Ok(UserResponse::Graph(graph_config)) => {
@@ -611,7 +641,7 @@ fn main() {
             };
             Ok(graph::get_graph(to_draw))
         },
-        Err(msg) => Err(msg)
+        Err(msg) => Err(vec![msg])
     };
 
 
@@ -621,89 +651,14 @@ fn main() {
                 println!("{}", s);
             }
         }
-        Err(s) => {
-            eprintln!("{}", s);
+        Err(ss) => {
+            eprintln!("Error(s) have occurred:\n");
+            for s in ss {
+                eprintln!(" * {}", s);
+            }
+            eprintln!("");
             std::process::exit(1);
         }
     }
 
 }
-
-// == Probably dead! ================================================
-
-//     fn as_kkv<'a>(form: &str, s: &'a str) -> Result<(&'a str, &'a str, &'a str), String> {
-//         let split: Vec<&str> = s.splitn(3, '=').collect();
-//         match split.len() {
-//             3 => Ok((split[0], split[1], split[2])),
-//             _ => Err(format!("{} The {} form must include a non-zero length NAME", s, form))
-//         }
-//     }
-// 
-// 
-//     // TODO: Must be above 0
-//     fn min_max_validator(form: &str, s: String) -> Result<KMinMax, String>{
-//         let (k, v) = as_kv(form, &s)?;
-// 
-//         v.split_once(',')
-//             .ok_or(format!("{} does not include a comma (must be in form {})", s, form))
-//             .and_then(|(a, b)| {
-// 
-//                 match (a.parse::<usize>(), b.parse::<usize>()) {
-//                     (Ok(aa), Ok(bb)) => {
-//                         match aa > bb {
-//                             true => Ok(KMinMax {k: k.to_string(), min: bb, max: aa }),
-//                             false => Ok(KMinMax {k: k.to_string(), min: aa, max: bb }),
-//                         }
-//                     },
-//                     _ => Err(format!("{} Min and Max must both be positive integers", s)),
-//                 }
-// 
-//             })
-// 
-//     }
-// 
-//     fn kv_validator(form: &str, s: String) -> Result<KV, String>{
-//         let (a, b) = as_kv(form, &s)?;
-//         Ok(KV {k: a.to_string(), v: b.to_string()})
-//     }
-// 
-//     fn kkv_validator(form: &str, s: String) -> Result<KKV, String>{
-//         let (a, b, c) = as_kkv(form, &s)?;
-//         Ok(KKV {kk: a.to_string(), k: b.to_string(), v: c.to_string()})
-//     }
-// 
-//     fn kv_arg_quick<'a>(name: &'a str, form: &'a str, help: &'a str, validator: fn(String) -> Result<(), String>) -> Arg<'a, 'a> {
-//         Arg::with_name(name)
-//             .long(name)
-//             .help(help)
-//             .required(false)
-//             .takes_value(true)
-//             .multiple(true)
-//             .value_name(form)
-//             .validator(validator)
-//     }
-// 
-//     fn non_empty_string_validator(form: &str, s: String) -> Result<String, String>{
-//         match s.len() {
-//             0 => Err(format!("{} The {} form must be a non-zero length", s, form)),
-//             _ => Ok(s),
-//         }
-//     }
-// 
-// struct KMinMax {
-//     k: String,
-//     min: usize,
-//     max: usize,
-// }
-// 
-// struct KV {
-//     k: String,
-//     v: String,
-// }
-// 
-// struct KKV {
-//     kk: String,
-//     k: String,
-//     v: String,
-// }
-

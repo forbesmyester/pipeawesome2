@@ -9,7 +9,6 @@ use async_trait::async_trait;
 
 #[allow(clippy::new_without_default)]
 pub struct Drain {
-    id: usize,
     started: bool,
     stdin: Option<Pull>,
     stdout: Option<Push>,
@@ -17,9 +16,8 @@ pub struct Drain {
 
 impl Drain {
 
-    pub fn new(id: usize, push: Push) -> Drain {
+    pub fn new(push: Push) -> Drain {
         Drain {
-            id,
             started: false,
             stdin: None,
             stdout: Some(push),
@@ -31,7 +29,8 @@ impl Drain {
 
 impl Connectable for Drain {
 
-    fn add_output(&mut self, port: OutputPort) -> std::result::Result<Pull, ConnectableAddOutputError> {
+    fn add_output(&mut self, port: OutputPort, _src_id: usize, _dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
+            println!("TAPTAPD");
         Err(ConnectableAddOutputError::UnsupportedPort(port))
     }
 
@@ -57,7 +56,6 @@ impl StartableControl for Drain {
         if let (Some(pull), Some(push)) = (std::mem::take(&mut self.stdin), std::mem::take(&mut self.stdout)) {
             return motion(pull, MotionNotifications::empty(), push).await
         }
-        println!("HERE");
         MotionResult::Err(MotionError::NoneError)
     }
 }

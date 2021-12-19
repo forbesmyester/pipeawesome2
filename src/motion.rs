@@ -1,4 +1,5 @@
 // use types::{Pull, MotionResult, IOData};
+use std::time::Instant;
 use async_std::channel::{Receiver, RecvError, SendError, Sender, TryRecvError};
 use futures::AsyncRead;
 use std::collections::VecDeque;
@@ -41,77 +42,163 @@ impl Default for ReadSplitControl {
     }
 }
 
+#[derive(Debug,PartialEq,Clone,Copy)]
+pub struct Journey {
+    pub src: usize,
+    pub dst: usize,
+}
 
-#[derive(Debug)]
-pub enum Pull {
-    CmdStdout(usize, aip::ChildStdout, ReadSplitControl),
-    CmdStderr(usize, aip::ChildStderr, ReadSplitControl),
-    Stdin(usize, aio::Stdin, ReadSplitControl),
-    File(usize, async_std::fs::File, ReadSplitControl),
-    Receiver(usize, Receiver<IOData>),
-    Mock(usize, VecDeque<IOData>),
-    None,
+#[derive(Debug,PartialEq,Clone,Copy)]
+pub struct JourneySource {
+    pub src: usize,
 }
 
 #[derive(Debug)]
-pub enum Push {
-    IoMock(usize, VecDeque<IOData>),
-    CmdStdin(usize, aip::ChildStdin),
-    Stdout(usize, aio::Stdout),
-    Stderr(usize, aio::Stderr),
-    File(usize, aio::BufWriter<async_std::fs::File>),
-    Sender(usize, Sender<IOData>),
-    IoSender(usize, Sender<IOData>),
+pub enum Pull {
+    CmdStdout(Journey, aip::ChildStdout, ReadSplitControl),
+    CmdStderr(Journey, aip::ChildStderr, ReadSplitControl),
+    Stdin(Journey, aio::Stdin, ReadSplitControl),
+    File(Journey, async_std::fs::File, ReadSplitControl),
+    Receiver(Journey, Receiver<IOData>),
+    Mock(Journey, VecDeque<IOData>),
     None,
+}
+
+
+impl Pull {
+    pub fn journey(&self) -> Option<&Journey> {
+        match self {
+            Pull::CmdStdout(j, ..) => Some(j),
+            Pull::CmdStderr(j, ..) => Some(j),
+            Pull::Stdin(j, ..) => Some(j),
+            Pull::File(j, ..) => Some(j),
+            Pull::Receiver(j, ..) => Some(j),
+            Pull::Mock(j, ..) => Some(j),
+            Pull::None => None
+        }
+    }
+}
+
+
+#[derive(Debug)]
+pub enum Push {
+    IoMock(Journey, VecDeque<IOData>),
+    CmdStdin(Journey, aip::ChildStdin),
+    Stdout(Journey, aio::Stdout),
+    Stderr(Journey, aio::Stderr),
+    File(Journey, aio::BufWriter<async_std::fs::File>),
+    Sender(Journey, Sender<IOData>),
+    IoSender(Journey, Sender<IOData>),
+    None,
+}
+
+impl Push {
+    pub fn journey(&self) -> Option<&Journey> {
+        match self {
+            Push::IoMock(j, ..) => Some(j),
+            Push::CmdStdin(j, ..) => Some(j),
+            Push::Stdout(j, ..) => Some(j),
+            Push::Stderr(j, ..) => Some(j),
+            Push::File(j, ..) => Some(j),
+            Push::Sender(j, ..) => Some(j),
+            Push::IoSender(j, ..) => Some(j),
+            Push::None => None,
+        }
+    }
+
 }
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum MotionError {
-    ReadIOError(std::io::Error),
-    CloseIOError(std::io::Error),
-    WriteIOError(std::io::Error, IOData),
-    RecvError(RecvError),
-    SendError(SendError<IOData>),
-    OutputClosed(IOData),
-    MonitorError(SendError<MonitorMessage>),
+    ReadIOError(Journey, Instant, std::io::Error),
+    CloseIOError(Journey, Instant, std::io::Error),
+    WriteIOError(Journey, Instant, std::io::Error, IOData),
+    RecvError(Journey, Instant, RecvError),
+    SendError(Journey, Instant, SendError<IOData>),
+    OutputClosed(Journey, Instant, IOData),
+    MonitorReadError(JourneySource, Instant, SendError<MonitorMessage>),
+    MonitorWriteError(Journey, Instant, SendError<MonitorMessage>),
     NoneError,
 }
+
+impl std::fmt::Display for MotionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MotionError::ReadIOError(_, _, a) => write!(f, "{}", a),
+            MotionError::CloseIOError(_, _, a) => write!(f, "{}", a),
+            MotionError::WriteIOError(_, _, a, _) => write!(f, "{}", a),
+            MotionError::RecvError(_, _, a) => write!(f, "{}", a),
+            MotionError::SendError(_, _, a) => write!(f, "{}", a),
+            MotionError::OutputClosed(_, _, _) => write!(f, "Output Closed"),
+            MotionError::MonitorReadError(_, _, a) => write!(f, "{}", a),
+            MotionError::MonitorWriteError(_, _, a) => write!(f, "{}", a),
+            MotionError::NoneError => write!(f, "None Error"),
+        }
+    }
+}
+
+impl MotionError {
+    pub fn instant(&self) -> Option<&Instant> {
+        match self {
+            MotionError::ReadIOError(_, i, ..) => Some(i),
+            MotionError::CloseIOError(_, i, ..) => Some(i),
+            MotionError::WriteIOError(_, i, ..) => Some(i),
+            MotionError::RecvError(_, i, ..) => Some(i),
+            MotionError::SendError(_, i, ..) => Some(i),
+            MotionError::OutputClosed(_, i, ..) => Some(i),
+            MotionError::MonitorReadError(_, i, ..) => Some(i),
+            MotionError::MonitorWriteError(_, i, ..) => Some(i),
+            MotionError::NoneError => None
+        }
+    }
+
+    pub fn journey(&self) -> Option<&Journey> {
+        match self {
+            MotionError::ReadIOError(j, ..) => Some(j),
+            MotionError::CloseIOError(j, ..) => Some(j),
+            MotionError::WriteIOError(j, ..) => Some(j),
+            MotionError::RecvError(j, ..) => Some(j),
+            MotionError::SendError(j, ..) => Some(j),
+            MotionError::OutputClosed(j, ..) => Some(j),
+            MotionError::MonitorReadError(..) => None,
+            MotionError::MonitorWriteError(j, ..) => Some(j),
+            MotionError::NoneError => None
+        }
+    }
+
+    pub fn journey_source(&self) -> Option<&usize> {
+        match self {
+            MotionError::ReadIOError(Journey { src, .. }, ..) => Some(src),
+            MotionError::CloseIOError(Journey { src, .. }, ..) => Some(src),
+            MotionError::WriteIOError(Journey { src, .. }, ..) => Some(src),
+            MotionError::RecvError(Journey { src, .. }, ..) => Some(src),
+            MotionError::SendError(Journey { src, .. }, ..) => Some(src),
+            MotionError::OutputClosed(Journey { src, .. }, ..) => Some(src),
+            MotionError::MonitorReadError(JourneySource { src }, ..) => Some(src),
+            MotionError::MonitorWriteError(Journey { src, .. }, ..) => Some(src),
+            MotionError::NoneError => None
+        }
+    }
+}
+
 
 impl PartialEq for MotionError {
     fn eq(&self, b: &MotionError) -> bool {
         match (&self, b) {
-            (MotionError::RecvError(a), MotionError::RecvError(b)) => a == b,
-            (MotionError::WriteIOError(_a1, a2), MotionError::WriteIOError(_b1, b2)) => a2 == b2,
-            (MotionError::ReadIOError(_a2), MotionError::ReadIOError(_b2)) => true,
+            (MotionError::RecvError(j, _, a), MotionError::RecvError(j2, _, a2)) => (a == a2) && (j == j2),
+            (MotionError::WriteIOError(j, _, _a, b), MotionError::WriteIOError(j2, _, _a2, b2)) => (b == b2) && (j == j2),
+            (MotionError::ReadIOError(j, _, _a), MotionError::ReadIOError(j2, _, _a2)) => (j == j2),
+            (MotionError::SendError(j, _, a), MotionError::SendError(j2, _, a2)) => (j == j2) && (a == a2),
+            (MotionError::MonitorReadError(j, _, a), MotionError::MonitorReadError(j2, _, a2)) => (j == j2) && (a == a2),
+            (MotionError::MonitorWriteError(j, _, a), MotionError::MonitorWriteError(j2, _, a2)) => (j == j2) && (a == a2),
             (MotionError::NoneError, MotionError::NoneError) => true,
-            (MotionError::SendError(a), MotionError::SendError(b)) => a == b,
-            (MotionError::MonitorError(a), MotionError::MonitorError(b)) => a == b,
             _ => false,
         }
     }
 }
 
 pub type MotionResult<T> = Result<T, MotionError>;
-
-impl From<RecvError> for MotionError {
-    fn from(x: RecvError) -> Self {
-        MotionError::RecvError(x)
-    }
-}
-
-impl From<SendError<IOData>> for MotionError {
-    fn from(x: SendError<IOData>) -> Self {
-        MotionError::SendError(x)
-    }
-}
-
-
-impl From<SendError<MonitorMessage>> for MotionError {
-    fn from(x: SendError<MonitorMessage>) -> Self {
-        MotionError::MonitorError(x)
-    }
-}
 
 fn is_split(buf: &[u8], splits: &[Vec<u8>]) -> Option<usize>
 {
@@ -135,11 +222,7 @@ fn is_closed(push: &Push) -> bool {
     }
 }
 
-async fn motion_read_buffer(rd: &mut (dyn AsyncRead + Unpin + Send), overflow: &mut ReadSplitControl) -> Result<Vec<u8>, MotionError> {
-
-    fn e_map(x: std::io::Error) -> MotionError {
-        MotionError::ReadIOError(x)
-    }
+async fn motion_read_buffer(rd: &mut (dyn AsyncRead + Unpin + Send), overflow: &mut ReadSplitControl) -> Result<Vec<u8>, std::io::Error> {
 
     loop {
 
@@ -153,7 +236,7 @@ async fn motion_read_buffer(rd: &mut (dyn AsyncRead + Unpin + Send), overflow: &
         }
 
         let mut buf: [u8; 255] = [0; 255];
-        let bytes_read = rd.read(&mut buf).await.map_err(e_map)?;
+        let bytes_read = rd.read(&mut buf).await?;
 
         // If end of stream
         if bytes_read == 0
@@ -197,6 +280,10 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
         IODataWrapper::IOData(IOData(v))
     }
 
+    async fn motion_read_buffer_wrapper(rd: &mut (dyn AsyncRead + Unpin + Send), overflow: &mut ReadSplitControl, j: Journey) -> MotionResult<IODataWrapper> {
+        motion_read_buffer(rd, overflow).await.map(do_match_stuff).map_err(|e| MotionError::ReadIOError(j, Instant::now(), e))
+    }
+
     // let id: Option<usize> = match &stdin {
     //     Pull::None => None,
     //     Pull::Mock(id, ..) => Some(*id),
@@ -207,24 +294,24 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
     //     Pull::File(id, ..) => Some(*id),
     // };
 
-    let out = match (stdin, do_try) {
+    match (stdin, do_try) {
         (Pull::None, false) => Ok(IODataWrapper::Finished),
-        (Pull::Mock(_, v), _) => MotionResult::Ok(v.pop_front().map(IODataWrapper::IOData).unwrap_or(IODataWrapper::Finished)),
-        (Pull::Receiver(_, rd), false) => match rd.recv().await {
+        (Pull::Mock(j, v), _) => Ok(v.pop_front().map(IODataWrapper::IOData).unwrap_or(IODataWrapper::Finished)),
+        (Pull::Receiver(j, rd), false) => match rd.recv().await {
             Ok(d) => Ok(IODataWrapper::IOData(d)),
             Err(RecvError) => Ok(IODataWrapper::Finished)
         },
-        (Pull::Receiver(_, rd), true) => match rd.try_recv() {
+        (Pull::Receiver(j, rd), true) => match rd.try_recv() {
             Ok(d) => Ok(IODataWrapper::IOData(d)),
             Err(TryRecvError::Empty) => Ok(IODataWrapper::Skipped),
             Err(TryRecvError::Closed) => Ok(IODataWrapper::Finished),
         },
-        (Pull::CmdStderr(_, rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
-        (Pull::CmdStdout(_, rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
-        (Pull::Stdin(_, rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
-        (Pull::File(_, rd, overflow), false) => motion_read_buffer(rd, overflow).await.map(do_match_stuff),
+        (Pull::CmdStderr(j, rd, overflow), false) => motion_read_buffer_wrapper(rd, overflow, *j).await,
+        (Pull::CmdStdout(j, rd, overflow), false) => motion_read_buffer_wrapper(rd, overflow, *j).await,
+        (Pull::Stdin(j, rd, overflow), false) => motion_read_buffer_wrapper(rd, overflow, *j).await,
+        (Pull::File(j, rd, overflow), false) => motion_read_buffer_wrapper(rd, overflow, *j).await,
         (_, true) => panic!("Only Pull::Receiver and Pull::Mock can do a motion_read with do_try")
-    };
+    }
     // match &out {
     //     Ok(IODataWrapper::IOData(o)) => { println!(
     //         "motion_read({:?}, {:?}) - iodata",
@@ -235,41 +322,44 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
     //     Ok(IODataWrapper::Skipped) => { println!("motion_read() - skipped") }
     //     Err(e) => { println!("motion_read({:?}) - error", e) }
     // };
-    out
 }
 
 
 pub async fn motion_write(stdout: &mut Push, data: IOData) -> MotionResult<()> {
-    // println!("motion_write({:?}, {:?})+", stdout, String::from_utf8_lossy(&data.0));
 
     if is_closed(stdout) {
-        return MotionResult::Err(MotionError::OutputClosed(data));
+        if let Some(j) = stdout.journey() {
+            return MotionResult::Err(MotionError::OutputClosed(*j, Instant::now(), data));
+        }
+        panic!("The {:?} is closed, but does not have a Journey", stdout);
     }
 
-    fn e_map(x: std::io::Error, d: IOData) -> MotionError {
-        MotionError::WriteIOError(x, d)
+    fn e_map_io(j: Journey, x: std::io::Error, d: IOData) -> MotionError {
+        MotionError::WriteIOError(j, Instant::now(), x, d)
     }
 
-    let r = match (stdout, data) {
+    fn e_map_chan(j: Journey, e: SendError<IOData>) -> MotionError {
+        MotionError::SendError(j, Instant::now(), e)
+    }
+
+    match (stdout, data) {
         (Push::None, IOData(_data)) => MotionResult::Ok(()),
         (Push::IoMock(_, v), IOData(data)) => { v.push_back(IOData(data)); Ok(()) },
-        (Push::Sender(_, wr), IOData(data)) => Ok(wr.send(IOData(data)).await?),
-        (Push::IoSender(_, wr), IOData(data)) => Ok(wr.send(IOData(data)).await?),
-        (Push::CmdStdin(_, wr), IOData(data)) => Ok(wr.write_all(&data).await.map_err(|e| e_map(e, IOData(data)))?),
-        (Push::Stdout(_, wr), IOData(data)) => Ok(wr.write_all(&data).await.map_err(|e| e_map(e, IOData(data)))?),
-        (Push::File(_, wr), IOData(data)) => Ok(wr.write_all(&data).await.map_err(|e| e_map(e, IOData(data)))?),
-        (Push::Stderr(_, wr), IOData(data)) => Ok(wr.write_all(&data).await.map_err(|e| e_map(e, IOData(data)))?),
-    };
-    // println!("motion_write()-");
-    r
+        (Push::Sender(j, wr), IOData(data)) => Ok(wr.send(IOData(data)).await.map_err(|e| e_map_chan(*j, e))?),
+        (Push::IoSender(j, wr), IOData(data)) => Ok(wr.send(IOData(data)).await.map_err(|e| e_map_chan(*j, e))?),
+        (Push::CmdStdin(j, wr), IOData(data)) => Ok(wr.write_all(&data).await.map_err(|e| e_map_io(*j, e, IOData(data)))?),
+        (Push::Stdout(j, wr), IOData(data)) => Ok(wr.write_all(&data).await.map_err(|e| e_map_io(*j, e, IOData(data)))?),
+        (Push::File(j, wr), IOData(data)) => Ok(wr.write_all(&data).await.map_err(|e| e_map_io(*j, e, IOData(data)))?),
+        (Push::Stderr(j, wr), IOData(data)) => Ok(wr.write_all(&data).await.map_err(|e| e_map_io(*j, e, IOData(data)))?),
+    }
 }
 
 
 pub async fn motion_close(stdout: &mut Push) -> MotionResult<()> {
     // println!("motion_close({:?})", stdout);
 
-    fn e_map(x: std::io::Error) -> MotionError {
-        MotionError::CloseIOError(x)
+    fn e_map(j: Journey, x: std::io::Error) -> MotionError {
+        MotionError::CloseIOError(j, Instant::now(), x)
     }
 
     match stdout {
@@ -277,10 +367,10 @@ pub async fn motion_close(stdout: &mut Push) -> MotionResult<()> {
         Push::IoMock(_, _v) => MotionResult::Ok(()),
         Push::Sender(_, wr) => { wr.close(); Ok(()) },
         Push::IoSender(_, wr) => { wr.close(); Ok(()) },
-        Push::CmdStdin(_, wr) => Ok(wr.flush().await.map_err(e_map)?),
-        Push::Stdout(_, wr) => Ok(wr.flush().await.map_err(e_map)?),
-        Push::Stderr(_, wr) => Ok(wr.flush().await.map_err(e_map)?),
-        Push::File(_, wr) => Ok(wr.flush().await.map_err(e_map)?),
+        Push::CmdStdin(j, wr) => Ok(wr.flush().await.map_err(|e| e_map(*j, e))?),
+        Push::Stdout(j, wr) => Ok(wr.flush().await.map_err(|e| e_map(*j, e))?),
+        Push::Stderr(j, wr) => Ok(wr.flush().await.map_err(|e| e_map(*j, e))?),
+        Push::File(j, wr) => Ok(wr.flush().await.map_err(|e| e_map(*j, e))?),
     }
 }
 
@@ -314,6 +404,10 @@ pub struct MotionOneResult {
 
 pub async fn motion_worker(pulls: &mut Vec<Pull>, monitor: &mut MotionNotifications, pushs: &mut Vec<Push>, do_try_read: bool) -> MotionResult<MotionOneResult> {
 
+    fn e_map_chan_read(j: Journey, e: SendError<IOData>) -> MotionError {
+        MotionError::SendError(j, Instant::now(), e)
+    }
+
     let mut finished_pulls = vec![];
     let mut read_from = vec![];
     let mut skipped: Vec<usize> = vec![];
@@ -341,7 +435,7 @@ pub async fn motion_worker(pulls: &mut Vec<Pull>, monitor: &mut MotionNotificati
             None => {
                 Ok(())
             }
-        }?;
+        }.map_err(|e| { MotionError::MonitorReadError( JourneySource { src: (*pull.journey().expect(&format!("motion::motion_worker monitor.read for pull {:?} had no journey", pull))).src }, Instant::now(), e ) })?;
         let was_finished = data == IODataWrapper::Finished;
 
         for (push_index, push) in pushs.iter_mut().enumerate() {
@@ -357,7 +451,7 @@ pub async fn motion_worker(pulls: &mut Vec<Pull>, monitor: &mut MotionNotificati
                 _ => {
                     Ok(())
                 }
-            }?;
+            }.map_err(|e| { MotionError::MonitorWriteError( *pull.journey().expect(&format!("motion::motion_worker monitor.read for pull {:?} had no journey", pull)), Instant::now(), e ) })?;
         }
     }
     MotionResult::Ok(MotionOneResult { finished_pulls, read_from, skipped })
@@ -593,8 +687,8 @@ use crate::fake_read::FakeReader;
         let data_1 = motion_read_buffer(&mut fake_reader, &mut overflow).await;
         println!("data_1: {:?}", data_1);
         assert_eq!(
-            data_1,
-            Ok("Hows you?\r\n".as_bytes().iter().copied().collect())
+            data_1.unwrap(),
+            "Hows you?\r\n".as_bytes().iter().copied().collect::<Vec<u8>>()
         );
         assert_eq!(
             overflow.overflow,
@@ -604,10 +698,9 @@ use crate::fake_read::FakeReader;
         println!("===========================");
         overflow.split_at = vec![vec![13, 10], vec![10]];
         let data_2 = motion_read_buffer(&mut fake_reader, &mut overflow).await;
-        println!("data_1: {:?}", data_1);
         assert_eq!(
-            data_2,
-            Ok("Great, I had big lunch!\n".as_bytes().iter().copied().collect())
+            data_2.unwrap(),
+            "Great, I had big lunch!\n".as_bytes().iter().copied().collect::<Vec<u8>>()
         );
         assert_eq!(
             overflow.overflow,
@@ -616,10 +709,9 @@ use crate::fake_read::FakeReader;
 
         println!("===========================");
         let data_3 = motion_read_buffer(&mut fake_reader, &mut overflow).await;
-        println!("data_1: {:?}", data_1);
         assert_eq!(
-            data_3,
-            Ok("Wow!\n".as_bytes().iter().copied().collect())
+            data_3.unwrap(),
+            "Wow!\n".as_bytes().iter().copied().collect::<Vec<u8>>()
         );
         assert_eq!(
             overflow.overflow,
@@ -628,16 +720,14 @@ use crate::fake_read::FakeReader;
 
         println!("===========================");
         let data_4 = motion_read_buffer(&mut fake_reader, &mut overflow).await;
-        println!("data_1: {:?}", data_1);
         assert_eq!(
-            data_4,
-            Ok("Yes!".as_bytes().iter().copied().collect())
+            data_4.unwrap(),
+            "Yes!".as_bytes().iter().copied().collect::<Vec<u8>>()
         );
         assert!(overflow.overflow.is_empty());
 
         println!("===========================");
         let data_5 = motion_read_buffer(&mut fake_reader, &mut overflow).await;
-        println!("data_1: {:?}", data_1);
         assert!(data_5.unwrap().is_empty());
         assert!(overflow.overflow.is_empty());
 
