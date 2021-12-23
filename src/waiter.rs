@@ -1,18 +1,12 @@
-use std::time::Duration;
+use crate::connectable::Breakable;
 use std::time::Instant;
-use crate::motion::Journey;
 use crate::config::{Config, DeserializedConnection};
 use crate::config::FaucetConfig;
-use crate::motion::Push;
 use crate::motion::Pull;
-use crate::motion::ReadSplitControl;
-use crate::config::InputPort;
 use crate::config::ComponentType;
-use std::collections::HashSet;
 use crate::config::Connection;
-use crate::connectable::ConnectableErrorSource;
 use crate::connectable::ConnectableError;
-use crate::connectable::{ Connectable, ConnectableAddOutputError, OutputPort };
+use crate::connectable::{ Connectable, InputPort, OutputPort };
 use crate::{buffer::{Buffer, BufferSizeMessage}, drain::Drain, faucet::{Faucet, FaucetControl}, junction::Junction, launch::Launch, motion::MotionError, startable_control::StartableControl};
 use std::collections::HashMap;
 use async_std::{channel::Receiver, prelude::*};
@@ -32,18 +26,6 @@ struct FaucetSettingsCapture {
     high_watermark: usize,
     faucet_component: FaucetControl,
     buffer_size_monitors: Vec<Receiver<BufferSizeMessage>>,
-}
-
-
-struct JoinFrom {
-    pub component_id: usize,
-    pub output_port: OutputPort,
-}
-
-
-struct JoinTo {
-    pub component_id: usize,
-    pub input_priority: isize,
 }
 
 
@@ -207,6 +189,7 @@ impl Waiter {
         self.component_type_name_to_id_reverse.insert(self.id, (component_type, name.clone()));
         let hm = self.component_type_name_to_id.get_mut(&component_type).unwrap();
         let inner_entry = hm.entry(name.clone());
+        // println!("NAME: {} = {}", name, self.id);
         inner_entry.or_insert(self.id);
         self.id = self.id + 1;
         self.id - 1
@@ -218,23 +201,23 @@ impl Waiter {
     }
 
 
-    fn get_src_pull(&mut self, src_id: usize, dst_id: usize, output_port: OutputPort) -> Result<Pull, ConnectableError> {
+    fn get_src_pull(&mut self, src_id: usize, dst_id: usize, output_port: OutputPort, breakable: Breakable) -> Result<Pull, ConnectableError> {
 
         let r = match self.component_type_name_to_id_reverse.get(&src_id) {
             Some((ComponentType::Faucet, component_name)) => {
-                self.faucet.get_mut(component_name).map(|x| x.add_output(output_port, src_id, dst_id))
+                self.faucet.get_mut(component_name).map(|x| x.add_output(output_port, breakable, src_id, dst_id))
             },
             Some((ComponentType::Launch, component_name)) => {
-                self.launch.get_mut(component_name).map(|x| x.add_output(output_port, src_id, dst_id))
+                self.launch.get_mut(component_name).map(|x| x.add_output(output_port, breakable, src_id, dst_id))
             },
             Some((ComponentType::Junction, component_name)) => {
-                self.junction.get_mut(component_name).map(|x| x.add_output(output_port, src_id, dst_id))
+                self.junction.get_mut(component_name).map(|x| x.add_output(output_port, breakable, src_id, dst_id))
             },
             Some((ComponentType::Buffer, component_name)) => {
-                self.buffer.get_mut(component_name).map(|x| x.add_output(output_port, src_id, dst_id))
+                self.buffer.get_mut(component_name).map(|x| x.add_output(output_port, breakable, src_id, dst_id))
             },
             Some((ComponentType::Drain, component_name,)) => {
-                self.drain.get_mut(component_name).map(|x| x.add_output(output_port, src_id, dst_id))
+                self.drain.get_mut(component_name).map(|x| x.add_output(output_port, breakable, src_id, dst_id))
             },
             None => None,
         };
@@ -252,10 +235,9 @@ impl Waiter {
 
     pub fn join(&mut self, (src_id, output_port) : (usize, OutputPort), (dst_id, input_port) : (usize, InputPort)) -> Result<(), ConnectableError> {
 
-        let pull = self.get_src_pull(src_id, dst_id, output_port)?;
-        let input_priority = match input_port {
-            InputPort::In(n) => n
-        };
+        // println!("{} -> {} = {:?}", src_id, dst_id, input_port.breakable);
+        let pull = self.get_src_pull(src_id, dst_id, output_port, input_port.breakable)?;
+        let input_priority = input_port.priority;
 
         let res = match self.component_type_name_to_id_reverse.get(&dst_id) {
             Some((ComponentType::Faucet, component_name)) => {
@@ -417,7 +399,6 @@ struct CreateSpec {
     component_name: String,
     input_port: Option<InputPort>,
     output_port: Option<OutputPort>,
-    is_end_connection: bool,
 }
 
 fn get_create_spec(connection: Connection) -> CreateSpec {
@@ -427,21 +408,18 @@ fn get_create_spec(connection: Connection) -> CreateSpec {
             component_name,
             input_port: Some(input_port),
             output_port: Some(output_port),
-            is_end_connection: false,
         },
         Connection::StartConnection { component_type, component_name, output_port } => CreateSpec {
             component_type,
             component_name,
             input_port: None,
             output_port: Some(output_port),
-            is_end_connection: false,
         },
         Connection::EndConnection { component_type, component_name, input_port  } => CreateSpec {
             component_type,
             component_name,
             input_port: Some(input_port),
             output_port: None,
-            is_end_connection: true,
         },
     }
 }
@@ -470,30 +448,13 @@ pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
         match component_type {
             ComponentType::Faucet => {
                 // TODO: Figure out how to get this in...
-                let pull = match config.faucet.get(&component_name).map(|t| t.source.as_str()).unwrap_or("") {
-                    "-" => Pull::Stdin(Journey { src: id, dst: id }, async_std::io::stdin(), ReadSplitControl::new()),
-                    "" => Pull::None,
-                    filename => {
-                        let file = async_std::fs::File::open(filename).await.map_err(|_| { format!("Could not open file: {}", filename) })?;
-                        Pull::File(Journey { src: id, dst: id }, file, ReadSplitControl::new())
-                    },
-                };
-                let faucet = Faucet::new(pull);
+                let faucet = Faucet::new(config.faucet.get(&component_name).map(|t| t.source.clone()).unwrap_or("".to_string()));
                 w.add_faucet(component_name.to_string(), faucet);
                 Ok(id)
             },
             ComponentType::Drain => {
                 // TODO: Figure out how to get this in...
-                let push = match config.drain.get(&component_name).map(|s| s.destination.as_str()).unwrap_or("") {
-                    "-" => Push::Stdout(Journey { src: id, dst: id }, async_std::io::stdout()),
-                    "_" => Push::Stderr(Journey { src: id, dst: id }, async_std::io::stderr()),
-                    "" => Push::None,
-                    filename => {
-                        let file = async_std::fs::File::create(filename).await.map_err(|_| { format!("Could not write to file: {}", filename) })?;
-                        Push::File(Journey { src: id, dst: id }, async_std::io::BufWriter::new(file))
-                    },
-                };
-                w.add_drain(component_name.to_string(), Drain::new(push));
+                w.add_drain(component_name.to_string(), Drain::new(config.drain.get(&component_name).map(|s| s.destination.clone()).unwrap_or("".to_string())));
                 Ok(id)
             },
             ComponentType::Buffer => {
@@ -543,7 +504,7 @@ pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
 
         if let Some((src_id, src_output_port)) = last {
 
-            let mut dst_input_port = Some(InputPort::In(0));
+            let mut dst_input_port = Some(InputPort { priority: 0, breakable: Breakable::Error });
             std::mem::swap(&mut create_spec.input_port, &mut dst_input_port);
 
             if let Some(dst_input_port) = dst_input_port {

@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Debug, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
+pub enum Breakable {
+    Consume,
+    Finish,
+    Error
+}
+
+#[derive(Copy, Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum OutputPort {
     Err,
     Out,
@@ -12,7 +20,15 @@ pub enum OutputPort {
     // Overflow,
 }
 
+fn default_input_port_breakable() -> Breakable { Breakable::Error }
 
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub struct InputPort {
+    #[serde(default = "default_input_port_breakable")]
+    pub breakable: Breakable,
+    pub priority: isize,
+}
 
 #[derive(Debug)]
 pub enum ConnectableAddOutputError {
@@ -49,7 +65,7 @@ impl std::fmt::Display for ConnectableError {
 }
 
 pub trait Connectable {
-    fn add_output(&mut self, port: OutputPort, src_id: usize, dst_id: usize) -> Result<Pull, ConnectableAddOutputError>;
+    fn add_output(&mut self, port: OutputPort, breakable: Breakable, src_id: usize, dst_id: usize) -> Result<Pull, ConnectableAddOutputError>;
     fn add_input(&mut self, pull: Pull, priority: isize) -> Result<(), ConnectableAddInputError>;
 }
 

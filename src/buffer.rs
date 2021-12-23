@@ -1,4 +1,5 @@
-// use pipeawesome2::motion::{Pull, MotionResult, IOData};
+use crate::motion::PullJourney;
+use crate::connectable::Breakable;
 use crate::motion::Journey;
 use crate::connectable::OutputPort;
 use crate::connectable::ConnectableAddOutputError;
@@ -28,11 +29,11 @@ pub struct Buffer {
 
 impl Connectable for Buffer {
 
-    fn add_output(&mut self, port: OutputPort, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
+    fn add_output(&mut self, port: OutputPort, breakable: Breakable, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
         if self.stdout.is_some() { return Err(ConnectableAddOutputError::AlreadyAllocated(port)); }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id }, child_stdout_push_channel));
-        Ok(Pull::Receiver(Journey { src: src_id, dst: dst_id }, stdout_io_reciever_channel))
+        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
+        Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, stdout_io_reciever_channel))
     }
 
     fn add_input(&mut self, pull: Pull, unused_priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
@@ -73,6 +74,7 @@ impl Buffer {
 
 }
 
+
 #[async_trait]
 impl StartableControl for Buffer {
     async fn start(&mut self) -> MotionResult<usize> {
@@ -81,18 +83,27 @@ impl StartableControl for Buffer {
         let (monitor_i_snd, monitor_i_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
         let (monitor_o_snd, monitor_o_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
 
-        let push_a = Push::Sender(Journey { src: 0, dst: 0 }, unbounded_snd);
-        let pull_b = Pull::Receiver(Journey { src: 0, dst: 0 }, unbounded_rcv);
+        let stdin = std::mem::take(&mut self.stdin).ok_or(MotionError::NoneError)?;
+        let stdout = std::mem::take(&mut self.stdout).ok_or(MotionError::NoneError)?;
+
+        let push_a = Push::Sender(
+            Journey { src: 0, dst: 0, breakable: stdout.journey().ok_or(MotionError::NoneError)?.breakable.clone()},
+            unbounded_snd
+        );
+        let pull_b = Pull::Receiver(
+            PullJourney { src: 0, dst: 0 },
+            unbounded_rcv
+        );
 
         let r_a = motion(
-            std::mem::take(&mut self.stdin).ok_or(MotionError::NoneError)?,
+            stdin,
             MotionNotifications::written(monitor_i_snd),
             push_a
         );
         let r_b = motion(
             pull_b,
             MotionNotifications::read(monitor_o_snd),
-            std::mem::take(&mut self.stdout).ok_or(MotionError::NoneError)?,
+            stdout,
         );
 
         async fn total_in_buffer(sender: Option<Sender<BufferSizeMessage>>, m_in: Receiver<MonitorMessage>, m_out: Receiver<MonitorMessage>) -> Result<usize, SendError<BufferSizeMessage>> {
@@ -172,6 +183,7 @@ impl StartableControl for Buffer {
 fn do_stuff() {
 
     use crate::motion::IOData;
+    use crate::connectable::Breakable;
 
     pub async fn test_buffer_impl() -> MotionResult<usize>  {
         use std::collections::VecDeque;
@@ -218,11 +230,11 @@ fn do_stuff() {
             vdq
         }
 
-        let input = Pull::Mock(Journey { src: 0, dst: 0 }, get_input());
+        let input = Pull::Mock(PullJourney { src: 0, dst: 0 }, get_input());
         let mut buffer = Buffer::new();
         buffer.set_stdout_size(1);
         buffer.add_input(input, 0).unwrap();
-        let output = buffer.add_output(OutputPort::Out, 0, 0).unwrap();
+        let output = buffer.add_output(OutputPort::Out, Breakable::Error, 0, 0).unwrap();
         let monitoring = buffer.add_buffer_size_monitor();
         let buffer_motion = buffer.start();
         match buffer_motion.join(read_data(output)).join(read_monitoring(monitoring)).await {
@@ -237,13 +249,7 @@ fn do_stuff() {
                     v
                 );
 
-                assert_eq!(
-                    monitoring_msg, vec![
-                        BufferSizeMessage(1),
-                        BufferSizeMessage(2),
-                        BufferSizeMessage(1),
-                        BufferSizeMessage(0),
-                    ]);
+                assert_eq!(monitoring_msg.last(), Some(&BufferSizeMessage(0)));
 
                 Ok(proc_count)
             },

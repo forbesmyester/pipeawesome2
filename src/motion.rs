@@ -1,4 +1,5 @@
 // use types::{Pull, MotionResult, IOData};
+use crate::connectable::Breakable;
 use std::time::Instant;
 use async_std::channel::{Receiver, RecvError, SendError, Sender, TryRecvError};
 use futures::AsyncRead;
@@ -46,6 +47,25 @@ impl Default for ReadSplitControl {
 pub struct Journey {
     pub src: usize,
     pub dst: usize,
+    pub breakable: Breakable,
+}
+
+impl Journey {
+    pub fn as_pull_journey(&self) -> PullJourney {
+        PullJourney { src: self.src, dst: self.dst }
+    }
+}
+
+impl PullJourney {
+    pub fn as_journey(&self, breakable: Breakable) -> Journey {
+        Journey { src: self.src, dst: self.dst, breakable }
+    }
+}
+
+#[derive(Debug,PartialEq,Clone,Copy)]
+pub struct PullJourney {
+    pub src: usize,
+    pub dst: usize,
 }
 
 #[derive(Debug,PartialEq,Clone,Copy)]
@@ -55,18 +75,18 @@ pub struct JourneySource {
 
 #[derive(Debug)]
 pub enum Pull {
-    CmdStdout(Journey, aip::ChildStdout, ReadSplitControl),
-    CmdStderr(Journey, aip::ChildStderr, ReadSplitControl),
-    Stdin(Journey, aio::Stdin, ReadSplitControl),
-    File(Journey, async_std::fs::File, ReadSplitControl),
-    Receiver(Journey, Receiver<IOData>),
-    Mock(Journey, VecDeque<IOData>),
+    CmdStdout(PullJourney, aip::ChildStdout, ReadSplitControl),
+    CmdStderr(PullJourney, aip::ChildStderr, ReadSplitControl),
+    Stdin(PullJourney, aio::Stdin, ReadSplitControl),
+    File(PullJourney, async_std::fs::File, ReadSplitControl),
+    Receiver(PullJourney, Receiver<IOData>),
+    Mock(PullJourney, VecDeque<IOData>),
     None,
 }
 
 
 impl Pull {
-    pub fn journey(&self) -> Option<&Journey> {
+    pub fn journey(&self) -> Option<&PullJourney> {
         match self {
             Pull::CmdStdout(j, ..) => Some(j),
             Pull::CmdStderr(j, ..) => Some(j),
@@ -109,31 +129,40 @@ impl Push {
 }
 
 #[derive(Debug)]
+pub enum OutputClosedReason {
+    BrokenPipe,
+    ChannelClosed
+}
+
+#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum MotionError {
-    ReadIOError(Journey, Instant, std::io::Error),
+    ReadIOError(PullJourney, Instant, std::io::Error),
     CloseIOError(Journey, Instant, std::io::Error),
+    OpenIOError(PullJourney, Instant, std::io::Error),
     WriteIOError(Journey, Instant, std::io::Error, IOData),
     RecvError(Journey, Instant, RecvError),
     SendError(Journey, Instant, SendError<IOData>),
-    OutputClosed(Journey, Instant, IOData),
+    OutputClosed(Journey, Instant, OutputClosedReason, IOData),
     MonitorReadError(JourneySource, Instant, SendError<MonitorMessage>),
-    MonitorWriteError(Journey, Instant, SendError<MonitorMessage>),
+    MonitorWriteError(PullJourney, Instant, SendError<MonitorMessage>),
     NoneError,
 }
 
 impl std::fmt::Display for MotionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MotionError::ReadIOError(_, _, a) => write!(f, "{}", a),
-            MotionError::CloseIOError(_, _, a) => write!(f, "{}", a),
-            MotionError::WriteIOError(_, _, a, _) => write!(f, "{}", a),
-            MotionError::RecvError(_, _, a) => write!(f, "{}", a),
-            MotionError::SendError(_, _, a) => write!(f, "{}", a),
-            MotionError::OutputClosed(_, _, _) => write!(f, "Output Closed"),
-            MotionError::MonitorReadError(_, _, a) => write!(f, "{}", a),
-            MotionError::MonitorWriteError(_, _, a) => write!(f, "{}", a),
-            MotionError::NoneError => write!(f, "None Error"),
+            MotionError::ReadIOError(_, _, a) => write!(f, "MotionError::ReadIOError: {}", a),
+            MotionError::CloseIOError(_, _, a) => write!(f, "MotionError::CloseIOError: {}", a),
+            MotionError::OpenIOError(_, _, a) => write!(f, "MotionError::OpenIOError: {}", a),
+            MotionError::WriteIOError(_, _, a, _) => write!(f, "MotionError::WriteIOError: {}", a),
+            MotionError::RecvError(_, _, a) => write!(f, "MotionError::RecvError: {}", a),
+            MotionError::SendError(_, _, a) => write!(f, "MotionError::SendError: {}", a),
+            MotionError::OutputClosed(_, _, OutputClosedReason::BrokenPipe, _) => write!(f, "MotionError::OutputClosed: BrokenPipe"),
+            MotionError::OutputClosed(_, _, OutputClosedReason::ChannelClosed, _) => write!(f, "MotionError::OutputClosed: ChannelClosed"),
+            MotionError::MonitorReadError(_, _, a) => write!(f, "MotionError::MonitorReadError: {}", a),
+            MotionError::MonitorWriteError(_, _, a) => write!(f, "MotionError::MonitorWriteError: {}", a),
+            MotionError::NoneError => write!(f, "MotionError::NoneError: None Error"),
         }
     }
 }
@@ -143,6 +172,7 @@ impl MotionError {
         match self {
             MotionError::ReadIOError(_, i, ..) => Some(i),
             MotionError::CloseIOError(_, i, ..) => Some(i),
+            MotionError::OpenIOError(_, i, ..) => Some(i),
             MotionError::WriteIOError(_, i, ..) => Some(i),
             MotionError::RecvError(_, i, ..) => Some(i),
             MotionError::SendError(_, i, ..) => Some(i),
@@ -155,12 +185,28 @@ impl MotionError {
 
     pub fn journey(&self) -> Option<&Journey> {
         match self {
-            MotionError::ReadIOError(j, ..) => Some(j),
+            MotionError::ReadIOError(_j, ..) => None,
             MotionError::CloseIOError(j, ..) => Some(j),
+            MotionError::OpenIOError(_j, ..) => None,
             MotionError::WriteIOError(j, ..) => Some(j),
             MotionError::RecvError(j, ..) => Some(j),
             MotionError::SendError(j, ..) => Some(j),
             MotionError::OutputClosed(j, ..) => Some(j),
+            MotionError::MonitorReadError(..) => None,
+            MotionError::MonitorWriteError(_j, ..) => None,
+            MotionError::NoneError => None
+        }
+    }
+
+    pub fn pull_journey(&self) -> Option<&PullJourney> {
+        match self {
+            MotionError::ReadIOError(j, ..) => Some(j),
+            MotionError::CloseIOError(_j, ..) => None,
+            MotionError::OpenIOError(j, ..) => Some(j),
+            MotionError::WriteIOError(_j, ..) => None,
+            MotionError::RecvError(_j, ..) => None,
+            MotionError::SendError(_j, ..) => None,
+            MotionError::OutputClosed(_j, ..) => None,
             MotionError::MonitorReadError(..) => None,
             MotionError::MonitorWriteError(j, ..) => Some(j),
             MotionError::NoneError => None
@@ -169,14 +215,15 @@ impl MotionError {
 
     pub fn journey_source(&self) -> Option<&usize> {
         match self {
-            MotionError::ReadIOError(Journey { src, .. }, ..) => Some(src),
+            MotionError::ReadIOError(PullJourney { src, .. }, ..) => Some(src),
             MotionError::CloseIOError(Journey { src, .. }, ..) => Some(src),
+            MotionError::OpenIOError(PullJourney { src, .. }, ..) => Some(src),
             MotionError::WriteIOError(Journey { src, .. }, ..) => Some(src),
             MotionError::RecvError(Journey { src, .. }, ..) => Some(src),
             MotionError::SendError(Journey { src, .. }, ..) => Some(src),
             MotionError::OutputClosed(Journey { src, .. }, ..) => Some(src),
             MotionError::MonitorReadError(JourneySource { src }, ..) => Some(src),
-            MotionError::MonitorWriteError(Journey { src, .. }, ..) => Some(src),
+            MotionError::MonitorWriteError(PullJourney { src, .. }, ..) => Some(src),
             MotionError::NoneError => None
         }
     }
@@ -212,14 +259,6 @@ fn is_split(buf: &[u8], splits: &[Vec<u8>]) -> Option<usize>
         }
     }
     None
-}
-
-fn is_closed(push: &Push) -> bool {
-    match push {
-        Push::IoSender(_id, s) => s.is_closed(),
-        Push::Sender(_id, s) => s.is_closed(),
-        _ => false,
-    }
 }
 
 async fn motion_read_buffer(rd: &mut (dyn AsyncRead + Unpin + Send), overflow: &mut ReadSplitControl) -> Result<Vec<u8>, std::io::Error> {
@@ -280,7 +319,7 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
         IODataWrapper::IOData(IOData(v))
     }
 
-    async fn motion_read_buffer_wrapper(rd: &mut (dyn AsyncRead + Unpin + Send), overflow: &mut ReadSplitControl, j: Journey) -> MotionResult<IODataWrapper> {
+    async fn motion_read_buffer_wrapper(rd: &mut (dyn AsyncRead + Unpin + Send), overflow: &mut ReadSplitControl, j: PullJourney) -> MotionResult<IODataWrapper> {
         motion_read_buffer(rd, overflow).await.map(do_match_stuff).map_err(|e| MotionError::ReadIOError(j, Instant::now(), e))
     }
 
@@ -296,12 +335,12 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
 
     match (stdin, do_try) {
         (Pull::None, false) => Ok(IODataWrapper::Finished),
-        (Pull::Mock(j, v), _) => Ok(v.pop_front().map(IODataWrapper::IOData).unwrap_or(IODataWrapper::Finished)),
-        (Pull::Receiver(j, rd), false) => match rd.recv().await {
+        (Pull::Mock(_j, v), _) => Ok(v.pop_front().map(IODataWrapper::IOData).unwrap_or(IODataWrapper::Finished)),
+        (Pull::Receiver(_j, rd), false) => match rd.recv().await {
             Ok(d) => Ok(IODataWrapper::IOData(d)),
             Err(RecvError) => Ok(IODataWrapper::Finished)
         },
-        (Pull::Receiver(j, rd), true) => match rd.try_recv() {
+        (Pull::Receiver(_j, rd), true) => match rd.try_recv() {
             Ok(d) => Ok(IODataWrapper::IOData(d)),
             Err(TryRecvError::Empty) => Ok(IODataWrapper::Skipped),
             Err(TryRecvError::Closed) => Ok(IODataWrapper::Finished),
@@ -327,19 +366,15 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
 
 pub async fn motion_write(stdout: &mut Push, data: IOData) -> MotionResult<()> {
 
-    if is_closed(stdout) {
-        if let Some(j) = stdout.journey() {
-            return MotionResult::Err(MotionError::OutputClosed(*j, Instant::now(), data));
-        }
-        panic!("The {:?} is closed, but does not have a Journey", stdout);
-    }
-
     fn e_map_io(j: Journey, x: std::io::Error, d: IOData) -> MotionError {
-        MotionError::WriteIOError(j, Instant::now(), x, d)
+        match x.kind() {
+            std::io::ErrorKind::BrokenPipe => MotionError::OutputClosed(j, Instant::now(), OutputClosedReason::BrokenPipe, d),
+            _ => MotionError::WriteIOError(j, Instant::now(), x, d)
+        }
     }
 
     fn e_map_chan(j: Journey, e: SendError<IOData>) -> MotionError {
-        MotionError::SendError(j, Instant::now(), e)
+        MotionError::OutputClosed(j, Instant::now(), OutputClosedReason::ChannelClosed, e.0)
     }
 
     match (stdout, data) {
@@ -390,288 +425,327 @@ impl MotionNotifications {
     pub fn written(s: Sender<MonitorMessage>) -> MotionNotifications {
         MotionNotifications { read: None, written: Some(s) }
     }
-    pub fn both(read: Sender<MonitorMessage>, written: Sender<MonitorMessage>) -> MotionNotifications {
-        MotionNotifications { read: Some(read), written: Some(written) }
-    }
 }
 
-#[derive(Debug)]
-pub struct MotionOneResult {
-    pub finished_pulls: Vec<usize>,
-    pub read_from: Vec<usize>,
-    pub skipped: Vec<usize>,
+#[derive(Debug, PartialEq)]
+pub struct MotionWorkerResult {
+    pub finished: bool,
+    pub read: bool,
 }
 
-pub async fn motion_worker(pulls: &mut Vec<Pull>, monitor: &mut MotionNotifications, pushs: &mut Vec<Push>, do_try_read: bool) -> MotionResult<MotionOneResult> {
+pub async fn motion_worker(pull: &mut Pull, monitor: &mut MotionNotifications, pushs: &mut Vec<Push>, do_try_read: bool) -> MotionResult<MotionWorkerResult> {
 
-    fn e_map_chan_read(j: Journey, e: SendError<IOData>) -> MotionError {
-        MotionError::SendError(j, Instant::now(), e)
+    let data = motion_read(pull, do_try_read).await?;
+    if data == IODataWrapper::Skipped {
+        return MotionResult::Ok(MotionWorkerResult { finished: false, read: false })
     }
 
-    let mut finished_pulls = vec![];
-    let mut read_from = vec![];
-    let mut skipped: Vec<usize> = vec![];
+    match &monitor.read {
+        Some(m) => m.send(MonitorMessage::Read(0)).await,
+        None => Ok(()),
+    }.map_err(|e| { MotionError::MonitorReadError( JourneySource { src: (*pull.journey().expect(&format!("motion::motion_worker monitor.read for pull {:?} had no journey", pull))).src }, Instant::now(), e ) })?;
 
-    for (pull_index, pull) in pulls.iter_mut().enumerate() {
+    let was_finished = data == IODataWrapper::Finished;
 
-        // If we can finished reading that particular pull
-        if finished_pulls.contains(&pull_index) { continue; }
+    let mut unfinished_push_count = pushs.len();
 
-        // Try read and do housekeeping
-        let data = motion_read(pull, do_try_read).await?;
-        if data == IODataWrapper::Skipped {
-            skipped.push(pull_index);
-            continue;
-        }
-        read_from.push(pull_index);
-        if data == IODataWrapper::Finished {
-            finished_pulls.push(pull_index);
-            continue;
-        }
-        match &monitor.read {
-            Some(m) => {
-                m.send(MonitorMessage::Read(pull_index)).await
-            }
-            None => {
-                Ok(())
-            }
-        }.map_err(|e| { MotionError::MonitorReadError( JourneySource { src: (*pull.journey().expect(&format!("motion::motion_worker monitor.read for pull {:?} had no journey", pull))).src }, Instant::now(), e ) })?;
-        let was_finished = data == IODataWrapper::Finished;
-
-        for (push_index, push) in pushs.iter_mut().enumerate() {
-            match data.clone() {
-                IODataWrapper::Finished => { panic!("If we find an IODataWrapper::Finished we `continue` before we get here"); },
-                IODataWrapper::IOData(iodata) => motion_write(push, iodata).await,
-                IODataWrapper::Skipped => MotionResult::Ok(()),
-            }?;
-            match (was_finished, &monitor.written) {
-                (false, Some(m)) => {
-                    m.send(MonitorMessage::Wrote(push_index)).await
-                },
-                _ => {
-                    Ok(())
+    for push in pushs {
+        match (push.journey().map(|j| j.breakable).unwrap_or(Breakable::Error), data.clone()) {
+            (_, IODataWrapper::Finished) => Ok(()),
+            (_, IODataWrapper::Skipped) => MotionResult::Ok(()),
+            (Breakable::Error, IODataWrapper::IOData(iodata)) => motion_write(push, iodata).await,
+            (breakable, IODataWrapper::IOData(iodata)) => {
+                match motion_write(push, iodata).await {
+                    Err(MotionError::OutputClosed(_, _, _, _)) => {
+                        if breakable == Breakable::Finish {
+                            unfinished_push_count = unfinished_push_count - 1;
+                        }
+                        Ok(())
+                    },
+                    x => x,
                 }
-            }.map_err(|e| { MotionError::MonitorWriteError( *pull.journey().expect(&format!("motion::motion_worker monitor.read for pull {:?} had no journey", pull)), Instant::now(), e ) })?;
-        }
+            },
+        }?;
     }
-    MotionResult::Ok(MotionOneResult { finished_pulls, read_from, skipped })
+
+    if let Some(m) = monitor.written.as_ref() {
+        m.send(MonitorMessage::Wrote(0)).await
+            .map_err(|e| { MotionError::MonitorWriteError( *pull.journey().expect(&format!("motion::motion_worker monitor.read for pull {:?} had no journey", pull)), Instant::now(), e ) })?;
+    }
+
+    if unfinished_push_count == 0 {
+        return MotionResult::Ok(MotionWorkerResult { finished: true, read: true })
+    }
+
+    MotionResult::Ok(MotionWorkerResult { finished: was_finished, read: true })
 }
 
 
-pub async fn motion(pull: Pull, mut monitor: MotionNotifications, push: Push) -> MotionResult<usize> {
+pub async fn motion(mut pull: Pull, mut monitor: MotionNotifications, push: Push) -> MotionResult<usize> {
     let mut read_count = 0;
-    let mut pulls = vec![pull];
     let mut pushs = vec![push];
 
     loop {
-        if pulls.is_empty() {
-            for push in pushs.iter_mut() {
-                motion_close(push).await?;
+
+        let motion_one_result = motion_worker(&mut pull, &mut monitor, &mut pushs, false).await?;
+        if motion_one_result.read {
+            read_count += 1;
+        }
+
+        if motion_one_result.finished {
+            for mut push in pushs {
+                motion_close(&mut push).await?;
             }
             monitor.read.map(|m| m.close());
             monitor.written.map(|m| m.close());
             return MotionResult::Ok(read_count);
         }
-
-        let motion_one_result = motion_worker(&mut pulls, &mut monitor, &mut pushs, false).await?;
-        read_count += motion_one_result.read_from.len();
-
-        for i in motion_one_result.finished_pulls.into_iter().rev() {
-            pulls.remove(i);
-        }
     }
 
 }
 
 
-// pub async fn motion_for_launch(pulls: &mut Vec<Pull>, push: Push) -> MotionResult<usize> {
-//     let mut read_count = 0;
-//     let mut pushs = vec![push];
-//     let mut monitor = MotionNotifications::empty();
-// 
-//     loop {
-//         if pulls.is_empty() {
-//             for push in pushs.iter_mut() {
-//                 motion_close(push).await?;
-//             }
-//             return MotionResult::Ok(read_count);
-//         }
-// 
-//         let motion_one_result = motion_worker(pulls, &mut monitor, &mut pushs, false).await?;
-//         read_count += motion_one_result.read_from.len();
-// 
-//     }
-// 
-// }
+#[test]
+fn test_motion_worker_output_closed_unbreakable() {
+
+    use async_std::channel::bounded;
+
+    struct TestMotionWorker {
+        data_5: Vec<IODataWrapper>,
+        data_6: Vec<IODataWrapper>,
+        monitor_read_data: Vec<MonitorMessage>,
+        monitor_written_data: Vec<MonitorMessage>,
+        read: bool,
+        finished: bool,
+    }
+
+    async fn test_motion_worker_output_closed_unbreakable() -> MotionResult<(TestMotionWorker, MotionResult<MotionWorkerResult>)> {
+
+        let mut source_1 = VecDeque::new();
+        for i in 90..92 {
+            source_1.push_back(IOData(vec![i]));
+        }
+
+        let (output_send_1, output_read_1) = bounded(2);
+        let (output_send_2, output_read_2) = bounded(2);
+
+        let (monitor_read_sender, montitor_read_receiver) = bounded(2);
+        let (monitor_written_sender, montitor_written_receiver) = bounded(2);
+
+        let mut motion_pull = Pull::Mock(PullJourney { src: 0, dst: 1 }, source_1);
+        let mut motion_push = vec![
+            Push::Sender(Journey { src: 0, dst: 1, breakable: Breakable::Error }, output_send_1),
+            Push::Sender(Journey { src: 0, dst: 2, breakable: Breakable::Error }, output_send_2)
+        ];
+
+        let mut notifications = MotionNotifications {
+            read: Some(monitor_read_sender),
+            written: Some(monitor_written_sender),
+        };
+
+        let r1 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, false).await?;
+
+        let mut pull_reader_5 = Pull::Receiver(PullJourney { src: 1, dst: 5 }, output_read_1);
+        let mut pull_reader_6 = Pull::Receiver(PullJourney { src: 2, dst: 6 }, output_read_2);
+
+        let mut r_5 = vec![];
+        let mut r_6 = vec![];
+        r_5.push(motion_read(&mut pull_reader_5, false).await.unwrap());
+        r_6.push(motion_read(&mut pull_reader_6, false).await.unwrap());
+        drop(pull_reader_6);
+
+        let mut monitor_read_data = vec![];
+        let mut monitor_written_data = vec![];
+        monitor_read_data.push(montitor_read_receiver.recv().await.unwrap());
+        monitor_written_data.push(montitor_written_receiver.recv().await.unwrap());
 
 
-// #[test]
-// fn test_motion_one() {
-// 
-//     use async_std::channel::bounded;
-// 
-//     async fn test_motion_one_impl() -> MotionResult<Vec<u8>> {
-// 
-//         let mut source_1 = VecDeque::new();
-//         for i in 90..96 {
-//             source_1.push_back(IOData(vec![i]));
-//         }
-// 
-//         let mut source_2 = VecDeque::new();
-//         for i in 20..81 {
-//             source_2.push_back(IOData(vec![i]));
-//         }
-// 
-//         let (output_send, output_read) = bounded(128);
-// 
-//         let pull_config = vec![Pull::Mock(0, source_1), Pull::Mock(0, source_2)];
-// 
-//         motion(pull_config, MotionNotifications::empty(), vec![Push::Sender(1, output_send)]).await?;
-// 
-//         let mut stdout = vec![];
-//         let mut mock_stdout_pull_2_pull = Pull::Receiver(0, output_read);
-// 
-//         loop {
-//             let msg = motion_read(&mut mock_stdout_pull_2_pull, false).await.unwrap();
-//             match msg {
-//                 IODataWrapper::IOData(IOData(mut d)) => {
-//                     stdout.append(&mut d);
-//                 }
-//                 _ => {
-//                     break;
-//                 }
-//             }
-//         }
-// 
-//         stdout.sort();
-//         MotionResult::Ok(stdout)
-// 
-//     }
-// 
-// 
-//     let mut expected_result = vec![];
-//     for i in 20..81 { expected_result.push(i); }
-//     for i in 90..96 { expected_result.push(i); }
-// 
-//     let r = async_std::task::block_on(test_motion_one_impl());
-// 
-//     assert_eq!(r.is_ok(), true);
-//     assert_eq!(r.unwrap(), expected_result);
-// }
+        Ok(
+            (
+                TestMotionWorker {
+                    data_5: r_5,
+                    data_6: r_6,
+                    monitor_read_data,
+                    monitor_written_data,
+                    read: r1.read,
+                    finished: r1.finished,
+                },
+                motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, false).await
+            )
+        )
 
-// #[test]
-// fn test_motion() {
-// 
-//     use async_std::channel::{ bounded, unbounded };
-// 
-//     async fn test_motion_impl() -> ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>) {
-// 
-//         // source -->> s_snd0 -> s_rcv0 -->> snd1 -> rcv1 -->> mock_stdout_push_2 -> mock_stdout_pull_2
-//         //                              -->> snd2 -> rcv1 ⇗
-// 
-//         let (chan_0_read_snd, chan_0_read_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
-//         let (chan_0_writ_snd, chan_0_writ_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
-//         let (chan_1_read_snd, chan_1_read_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
-//         let (chan_1_writ_snd, chan_1_writ_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
-//         let (chan_2_read_snd, chan_2_read_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
-//         let (chan_2_writ_snd, chan_2_writ_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
-// 
-//         let mut source = VecDeque::new();
-//         source.push_back(IOData(vec![1]));
-//         source.push_back(IOData(vec![2]));
-//         let (s_snd0, s_rcv0) = bounded(1);
-//         let pull_config_1 = vec![Pull::Mock(0, source)];
-//         let push_config_1 = vec![Push::IoSender(0, s_snd0)];
-// 
-//         let motion1 = motion(
-//             pull_config_1,
-//             MotionNotifications::both(chan_0_read_snd, chan_0_writ_snd),
-//             push_config_1
-//         );
-// 
-//         // let (sndi1, rcvi1) = bounded(1);
-//         let pull_config_splitter = vec![
-//             Pull::Receiver(0, s_rcv0),
-//         ];
-//         let (snd1, rcv1) = unbounded();
-//         let (snd2, rcv2) = unbounded();
-//         let push_config_splitter = vec![Push::Sender(0, snd1), Push::Sender(0, snd2)];
-//         let motion2 = motion(
-//             pull_config_splitter,
-//             MotionNotifications::both(chan_1_read_snd, chan_1_writ_snd),
-//             push_config_splitter
-//         );
-// 
-//         let joiner_pull_configs = vec![
-//             Pull::Receiver(0, rcv1),
-//             Pull::Receiver(0, rcv2),
-//         ];
-//         let (mock_stdout_push_2, mock_stdout_pull_2)  = bounded(8);
-//         let motion3 = motion(
-//             joiner_pull_configs,
-//             MotionNotifications::both(chan_2_read_snd, chan_2_writ_snd),
-//             vec![Push::Sender(0, mock_stdout_push_2)]
-//         );
-// 
-//         let f: ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>) = motion1.join(motion2).join(motion3).await;
-// 
-//         let _expected_vecdequeue: VecDeque<IOData> = VecDeque::new();
-//         let mut stdout = vec![];
-//         let mut mock_stdout_pull_2_pull = Pull::Receiver(0, mock_stdout_pull_2);
-//         loop {
-//             let msg = motion_read(&mut mock_stdout_pull_2_pull, false).await.unwrap();
-//             if msg == IODataWrapper::Finished {
-//                 stdout.push(msg);
-//                 break;
-//             }
-//             stdout.push(msg);
-//         }
-//         assert_eq!(
-//             stdout,
-//             &[
-//                 IODataWrapper::IOData(IOData(vec![1])),
-//                 IODataWrapper::IOData(IOData(vec![1])),
-//                 IODataWrapper::IOData(IOData(vec![2])),
-//                 IODataWrapper::IOData(IOData(vec![2])),
-//                 IODataWrapper::Finished,
-//             ]
-//         );
-// 
-//         assert_eq!(chan_0_read_rcv.recv().await.unwrap(), MonitorMessage::Read(0));
-//         assert_eq!(chan_0_read_rcv.recv().await.unwrap(), MonitorMessage::Read(0));
-//         assert_eq!(chan_0_read_rcv.is_closed(), true);
-// 
-//         assert_eq!(chan_0_writ_rcv.recv().await.unwrap(), MonitorMessage::Wrote(0));
-//         assert_eq!(chan_0_writ_rcv.recv().await.unwrap(), MonitorMessage::Wrote(0));
-//         assert_eq!(chan_0_writ_rcv.is_closed(), true);
-// 
-//         assert_eq!(chan_1_read_rcv.recv().await.unwrap(), MonitorMessage::Read(0));
-//         assert_eq!(chan_1_read_rcv.recv().await.unwrap(), MonitorMessage::Read(0));
-//         assert_eq!(chan_1_read_rcv.is_closed(), true);
-// 
-//         assert_eq!(chan_1_writ_rcv.recv().await.unwrap(), MonitorMessage::Wrote(0));
-//         assert_eq!(chan_1_writ_rcv.recv().await.unwrap(), MonitorMessage::Wrote(1));
-//         assert_eq!(chan_1_writ_rcv.recv().await.unwrap(), MonitorMessage::Wrote(0));
-//         assert_eq!(chan_1_writ_rcv.recv().await.unwrap(), MonitorMessage::Wrote(1));
-//         assert_eq!(chan_1_writ_rcv.is_closed(), true);
-// 
-//         assert_eq!(chan_2_read_rcv.recv().await.unwrap(), MonitorMessage::Read(0));
-//         assert_eq!(chan_2_read_rcv.recv().await.unwrap(), MonitorMessage::Read(1));
-//         assert_eq!(chan_2_read_rcv.recv().await.unwrap(), MonitorMessage::Read(0));
-//         assert_eq!(chan_2_read_rcv.recv().await.unwrap(), MonitorMessage::Read(1));
-//         assert_eq!(chan_2_read_rcv.is_closed(), true);
-// 
-//         assert_eq!(chan_2_writ_rcv.recv().await.unwrap(), MonitorMessage::Wrote(0));
-//         assert_eq!(chan_2_writ_rcv.recv().await.unwrap(), MonitorMessage::Wrote(0));
-//         assert_eq!(chan_2_writ_rcv.recv().await.unwrap(), MonitorMessage::Wrote(0));
-//         assert_eq!(chan_2_writ_rcv.recv().await.unwrap(), MonitorMessage::Wrote(0));
-//         assert_eq!(chan_2_read_rcv.is_closed(), true);
-// 
-//         f
-//     }
-// 
-//     println!("R: {:?}", async_std::task::block_on(test_motion_impl()));
-// }
+    }
+
+
+    let (r1, r2) = async_std::task::block_on(test_motion_worker_output_closed_unbreakable()).unwrap();
+    assert_eq!(r1.data_5, vec![IODataWrapper::IOData(IOData(vec![90]))]);
+    assert_eq!(r1.data_6, vec![IODataWrapper::IOData(IOData(vec![90]))]);
+    assert_eq!(r1.monitor_read_data, vec![MonitorMessage::Read(0)]);
+    assert_eq!(r1.monitor_written_data, vec![MonitorMessage::Wrote(0)]);
+    assert_eq!(r1.read, true);
+    assert_eq!(r1.finished, false);
+    println!("{:?}", r2);
+    assert_eq!(r2.is_ok(), false);
+
+}
+
+
+#[test]
+fn test_motion_worker_output_closed_breakable() {
+
+    use async_std::channel::bounded;
+
+    async fn test_motion_worker_output_closed_breakable(breakable: Breakable) -> MotionResult<(Vec<IODataWrapper>, Vec<IODataWrapper>, MotionWorkerResult, MotionWorkerResult, MotionWorkerResult)> {
+
+        let mut source_1 = VecDeque::new();
+        for i in 90..99 {
+            source_1.push_back(IOData(vec![i]));
+        }
+
+        let (output_send_1, output_read_1) = bounded(8);
+        let (output_send_2, output_read_2) = bounded(8);
+
+        let (monitor_read_sender, montitor_read_receiver) = bounded(8);
+        let (monitor_written_sender, montitor_written_receiver) = bounded(8);
+
+        let mut motion_pull = Pull::Mock(PullJourney { src: 0, dst: 1 }, source_1);
+        let mut motion_push = vec![
+            Push::Sender(Journey { src: 0, dst: 1, breakable }, output_send_1),
+            Push::Sender(Journey { src: 0, dst: 2, breakable }, output_send_2)
+        ];
+
+        let mut notifications = MotionNotifications {
+            read: Some(monitor_read_sender),
+            written: Some(monitor_written_sender),
+        };
+
+        let r1 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, false).await?;
+
+        let mut pull_reader_5 = Pull::Receiver(PullJourney { src: 1, dst: 5 }, output_read_1);
+        let mut pull_reader_6 = Pull::Receiver(PullJourney { src: 2, dst: 6 }, output_read_2);
+
+        let mut r_5 = vec![];
+        let mut r_6 = vec![];
+        r_5.push(motion_read(&mut pull_reader_5, false).await.unwrap());
+        r_6.push(motion_read(&mut pull_reader_6, false).await.unwrap());
+
+        let mut monitor_read_data = vec![];
+        let mut monitor_written_data = vec![];
+        monitor_read_data.push(montitor_read_receiver.recv().await.unwrap());
+        monitor_written_data.push(montitor_written_receiver.recv().await.unwrap());
+
+        drop(pull_reader_5);
+        let r2 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, false).await?;
+        r_6.push(motion_read(&mut pull_reader_6, false).await.unwrap());
+        drop(pull_reader_6);
+        let r3 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, true).await?;
+
+        Ok((r_5, r_6, r1, r2, r3))
+
+    }
+
+    let (a_output_data_1, a_output_data_2, a_r1, a_r2, a_r3) = async_std::task::block_on(test_motion_worker_output_closed_breakable(Breakable::Consume)).unwrap();
+    assert_eq!(a_output_data_1, vec![IODataWrapper::IOData(IOData(vec![90]))]);
+    assert_eq!(a_output_data_2, vec![IODataWrapper::IOData(IOData(vec![90])), IODataWrapper::IOData(IOData(vec![91]))]);
+    assert_eq!(a_r1, MotionWorkerResult { read: true, finished: false });
+    assert_eq!(a_r2, MotionWorkerResult { read: true, finished: false });
+    assert_eq!(a_r3, MotionWorkerResult { read: true, finished: false });
+
+    let (b_output_datb_1, b_output_datb_2, b_r1, b_r2, b_r3) = async_std::task::block_on(test_motion_worker_output_closed_breakable(Breakable::Finish)).unwrap();
+    assert_eq!(b_output_datb_1, vec![IODataWrapper::IOData(IOData(vec![90]))]);
+    assert_eq!(b_output_datb_2, vec![IODataWrapper::IOData(IOData(vec![90])), IODataWrapper::IOData(IOData(vec![91]))]);
+    assert_eq!(b_r1, MotionWorkerResult { read: true, finished: false });
+    assert_eq!(b_r2, MotionWorkerResult { read: true, finished: false });
+    assert_eq!(b_r3, MotionWorkerResult { read: true, finished: true });
+
+}
+
+
+#[test]
+fn test_motion_worker_skipped_input() {
+
+    use async_std::channel::bounded;
+
+    struct TestMotionWorker {
+        data_5: Vec<IODataWrapper>,
+        data_6: Vec<IODataWrapper>,
+        monitor_read_data: Vec<MonitorMessage>,
+        monitor_written_data: Vec<MonitorMessage>,
+    }
+
+    async fn test_motion_worker_skipped_input() -> MotionResult<(TestMotionWorker, MotionResult<MotionWorkerResult>, MotionResult<MotionWorkerResult>)> {
+
+        let (motion_pull_send, motion_pull_read) = bounded(2);
+        let mut motion_pull = Pull::Receiver(PullJourney { src: 1, dst: 5 }, motion_pull_read);
+        motion_pull_send.send(IOData(vec![1])).await.unwrap();
+        let (output_send_1, output_read_1) = bounded(2);
+        let (output_send_2, output_read_2) = bounded(2);
+
+        let (monitor_read_sender, montitor_read_receiver) = bounded(2);
+        let (monitor_written_sender, montitor_written_receiver) = bounded(2);
+
+        let mut motion_push = vec![
+            Push::Sender(Journey { src: 0, dst: 1, breakable: Breakable::Error }, output_send_1),
+            Push::Sender(Journey { src: 0, dst: 2, breakable: Breakable::Error }, output_send_2)
+        ];
+
+        let mut notifications = MotionNotifications {
+            read: Some(monitor_read_sender),
+            written: Some(monitor_written_sender),
+        };
+
+        motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, false).await?;
+
+        let mut pull_reader_5 = Pull::Receiver(PullJourney { src: 1, dst: 5 }, output_read_1);
+        let mut pull_reader_6 = Pull::Receiver(PullJourney { src: 2, dst: 6 }, output_read_2);
+
+        let mut r_5 = vec![];
+        let mut r_6 = vec![];
+        r_5.push(motion_read(&mut pull_reader_5, false).await.unwrap());
+        r_6.push(motion_read(&mut pull_reader_6, false).await.unwrap());
+        drop(pull_reader_6);
+
+        let mut monitor_read_data = vec![];
+        let mut monitor_written_data = vec![];
+        monitor_read_data.push(montitor_read_receiver.recv().await.unwrap());
+        monitor_written_data.push(montitor_written_receiver.recv().await.unwrap());
+
+
+        let r2 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, true).await;
+        drop(motion_pull_send);
+
+        Ok(
+            (
+                TestMotionWorker {
+                    data_5: r_5,
+                    data_6: r_6,
+                    monitor_read_data,
+                    monitor_written_data,
+                },
+                r2,
+                motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, true).await
+            )
+        )
+
+    }
+
+
+    let (r1, r2, r3) = async_std::task::block_on(test_motion_worker_skipped_input()).unwrap();
+    assert_eq!(r1.data_5, vec![IODataWrapper::IOData(IOData(vec![1]))]);
+    assert_eq!(r1.data_6, vec![IODataWrapper::IOData(IOData(vec![1]))]);
+    assert_eq!(r1.monitor_read_data, vec![MonitorMessage::Read(0)]);
+    assert_eq!(r1.monitor_written_data, vec![MonitorMessage::Wrote(0)]);
+    assert_eq!(r2.is_ok(), true);
+    let r2_ok = r2.unwrap();
+    assert_eq!(r2_ok.read, false);
+    assert_eq!(r2_ok.finished, false);
+    assert_eq!(r3.is_ok(), true);
+    let r3_ok = r3.unwrap();
+    assert_eq!(r3_ok.read, true);
+    assert_eq!(r3_ok.finished, true);
+
+}
+
 
 #[test]
 fn test_motion_read_buffer() {

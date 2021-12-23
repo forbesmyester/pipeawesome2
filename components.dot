@@ -1,0 +1,141 @@
+digraph G {
+    rankdir=LR
+    labeljust=l
+    fontsize=20
+    
+    subgraph faucet {
+        color=lightgrey;
+        subgraph cluster_faucet {
+            label="Faucet"
+            faucet_pull [label="pull: file/stdin"]
+            faucet_push [label=push]
+            style="rounded"
+        }
+        fauct_exit_pull [label=pull]
+        faucet_pull -> faucet_push
+        faucet_push -> fauct_exit_pull [style=dashed]
+    }
+    
+
+    subgraph drain {
+        color=lightgrey;
+        drain_input [shape=plaintext, label=""]
+        drain_input -> drain_pull [style="dashed"]
+        subgraph cluster_drain {
+            label = "Drain"
+            drain_pull [label=pull]
+            drain_push [label="push: file/stdout"]
+            style="rounded"
+        }
+        drain_pull -> drain_push
+    }
+
+    subgraph launch {
+        color=lightgrey;
+        subgraph cluster_launch {
+            label="Launch"
+            launch_pull [label=pull]
+            launch_stdin_recv_push [label=push]
+            
+            subgraph cluster_spawn_holder {
+                color=white
+                label=""
+                subgraph cluster_launch_spawn {
+                    color=grey
+                    label="child.spawn"
+                    launch_stdin_recv_pull [label="pull:stdin"]
+                    launch_stdout_send_pull [label="pull:stdout"]
+                    launch_stderr_send_pull [label="pull:stdout"]
+                    style="filled"
+                }
+                launch_exit_send_push [label="push:exit"]
+            }
+            launch_stderr_recv_push [label="push"]
+            launch_stdout_recv_push [label="push"]
+            style="rounded"
+        }
+        launch_input [shape=plaintext, label=""]
+        launch_input -> launch_pull [style="dashed"]
+        launch_pull -> launch_stdin_recv_push
+        launch_stdin_recv_push -> launch_stdin_recv_pull [style=dashed]
+        launch_stdin_recv_pull -> launch_stdout_send_pull [style=dotted, arrowhead=none]
+        launch_stdin_recv_pull -> launch_stderr_send_pull [style=dotted, arrowhead=none]
+        
+        launch_stdout_send_pull -> launch_stdout_recv_push
+        launch_stderr_send_pull -> launch_stderr_recv_push
+        launch_stdout_recv_push -> launch_stdout_outer [style=dashed]
+        launch_stderr_recv_push -> launch_stderr_outer [style=dashed]
+        launch_exit_send_push -> launch_exit_outer [style=dashed]
+        subgraph cluster_launch_outputs {
+            color=white
+            launch_stderr_outer [label=pull]
+            launch_stdout_outer [label=pull]
+            launch_exit_outer [label=pull]
+        }
+    }
+
+
+    subgraph buffer {
+        color=lightgrey;
+        buffer_input_push [shape=plaintext, label=""]
+        subgraph cluster_buffer {
+            label = "Buffer"
+            buffer_pull [label=pull]
+            buffer_push [label=push]
+            buffer_push -> buffer_inner_pull [style=dashed, arrowhead=empty]
+            buffer_inner_pull [label=pull]
+            buffer_inner_push [label=push]
+            buffer_inner_pull -> buffer_inner_push
+            style="rounded"
+        }
+        buffer_input_push -> buffer_pull [style=dashed]
+        buffer_pull -> buffer_push
+        buffer_exit_pull [label=pull]
+        buffer_inner_push -> buffer_exit_pull [style=dashed]
+    }
+
+
+    subgraph junction {
+        color=lightgrey;
+        subgraph cluster_junction {
+            label = "Junction"
+            junction_push_1 [label=push]
+            junction_push_2 [label=push]
+            junction_pull_1 [label=pull]
+            junction_pull_2 [label=pull]
+            style="rounded"
+        }
+        junction_input_outer_1 [shape="plaintext", label=""]
+        junction_input_outer_2 [shape="plaintext", label=""]
+        junction_input_outer_1 -> junction_pull_1 [style=dashed]
+        junction_input_outer_2 -> junction_pull_2 [style=dashed]
+        junction_pull_1 -> junction_push_1
+        junction_pull_2 -> junction_push_1
+        junction_pull_1 -> junction_push_2
+        junction_pull_2 -> junction_push_2
+        junction_exit_pull_1 [label="pull"]
+        junction_exit_pull_2 [label="pull"]
+        junction_push_1 -> junction_exit_pull_1 [style=dashed]
+        junction_push_2 -> junction_exit_pull_2 [style=dashed]
+    }
+
+
+
+    subgraph cluster_legend {
+        label="Legend"
+        a [label=""]
+        b [label=""]
+        c [label=""]
+        d [label=""]
+        e [label=""]
+        f [label=""]
+        g [label=""]
+        h [label=""]
+        a -> b [label=motion]
+        c -> d [label=io, style=dotted, arrowhead=none]
+        e -> f [label="channel synchronous", style=dashed]
+        g -> h [label="channel asynchronous", style=dashed, arrowhead=empty]
+    }
+
+
+}

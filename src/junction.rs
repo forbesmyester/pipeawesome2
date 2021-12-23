@@ -1,3 +1,6 @@
+use crate::motion::PullJourney;
+use crate::connectable::Breakable;
+use crate::motion::MotionNotifications;
 use crate::motion::Journey;
 use crate::connectable::ConnectableAddInputError;
 use crate::connectable::ConnectableAddOutputError;
@@ -7,7 +10,7 @@ use async_std::channel::bounded;
 use crate::motion;
 use crate::utils::{ remove_vec_vec, remove_vec_vec_index };
 
-use super::motion::{ MotionResult, MotionNotifications, Pull, Push, };
+use super::motion::{ motion_worker, MotionResult, Pull, Push, };
 use crate::startable_control::StartableControl;
 use async_trait::async_trait;
 use crate::back_off::BackOff;
@@ -19,6 +22,39 @@ pub struct Junction {
     stdin: Vec<Vec<Pull>>,
     inputs: Vec<(Pull, isize)>,
 }
+
+
+#[derive(Debug)]
+pub struct MotionOneResult {
+    pub finished_pulls: Vec<usize>,
+    pub finished_pushs: Vec<usize>,
+    pub read_from: Vec<usize>,
+    pub skipped: Vec<usize>,
+}
+
+async fn junction_motion_worker(pulls: &mut Vec<Pull>, pushs: &mut Vec<Push>) -> MotionResult<MotionOneResult> {
+
+    let mut finished_pulls = vec![];
+    let mut read_from = vec![];
+    let mut skipped: Vec<usize> = vec![];
+    let mut notifications = MotionNotifications::empty();
+    for (pull_index, pull) in pulls.iter_mut().enumerate() {
+
+        // If we have finished reading that particular pull
+        if finished_pulls.contains(&pull_index) { continue; }
+
+        let r = motion_worker(pull, &mut notifications, pushs, true).await?;
+        if !r.read {
+            skipped.push(pull_index);
+        } else {
+            read_from.push(pull_index);
+        }
+        if r.finished { finished_pulls.push(pull_index); continue; }
+
+    }
+    MotionResult::Ok(MotionOneResult { finished_pulls, finished_pushs: vec![], read_from, skipped })
+}
+
 
 #[allow(clippy::new_without_default)]
 impl Junction {
@@ -59,17 +95,15 @@ impl Junction {
     }
 
 
-    async fn iteration(&mut self, notifications: &mut MotionNotifications, back_off: &mut BackOff) -> MotionResult<(bool, usize)> {
+    async fn iteration(&mut self, back_off: &mut BackOff) -> MotionResult<(bool, usize)> {
         let mut finished = vec![];
         let mut any_read = false;
         let mut read_count = 0;
 
         for (si_index, mut si) in self.stdin.iter_mut().enumerate() {
-            let motion_one_results = motion::motion_worker(
+            let motion_one_results = junction_motion_worker(
                 &mut si,
-                notifications,
                 &mut self.stdout,
-                true
             ).await?;
             read_count += motion_one_results.read_from.len();
             for fin in motion_one_results.finished_pulls.iter() {
@@ -105,10 +139,10 @@ impl Junction {
 
 impl Connectable for Junction {
 
-    fn add_output(&mut self, _port: OutputPort, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
+    fn add_output(&mut self, _port: OutputPort, breakable: Breakable, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout.push(Push::IoSender(Journey { src: src_id, dst: dst_id }, child_stdout_push_channel));
-        Ok(Pull::Receiver(Journey { src: src_id, dst: dst_id }, stdout_io_reciever_channel))
+        self.stdout.push(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
+        Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, stdout_io_reciever_channel))
     }
 
     fn add_input(&mut self, pull: Pull, priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
@@ -130,10 +164,9 @@ impl StartableControl for Junction {
 
         let mut back_off = BackOff::new();
         let mut read_count = 0;
-        let mut notifications = MotionNotifications::empty();
 
         loop {
-            match self.iteration(&mut notifications, &mut back_off).await {
+            match self.iteration(&mut back_off).await {
                 Ok((true, n)) => {
                     return Ok(read_count + n);
                 }
@@ -155,6 +188,7 @@ impl StartableControl for Junction {
 fn do_stuff() {
 
     use crate::motion::IOData;
+    use crate::connectable::Breakable;
 
     pub async fn test_junction_impl() -> MotionResult<usize>  {
 
@@ -187,9 +221,9 @@ fn do_stuff() {
         // chan_0_1_snd.close();
         // chan_1_0_snd.close();
 
-        let pull_0_0 = Pull::Receiver(Journey { src: 0, dst: 0 }, chan_0_0_rcv);
-        let pull_0_1 = Pull::Receiver(Journey { src: 0, dst: 0 }, chan_0_1_rcv);
-        let pull_1_0 = Pull::Receiver(Journey { src: 0, dst: 0 }, chan_1_0_rcv);
+        let pull_0_0 = Pull::Receiver(PullJourney { src: 0, dst: 0 }, chan_0_0_rcv);
+        let pull_0_1 = Pull::Receiver(PullJourney { src: 0, dst: 0 }, chan_0_1_rcv);
+        let pull_1_0 = Pull::Receiver(PullJourney { src: 0, dst: 0 }, chan_1_0_rcv);
 
         let mut junction = Junction::new();
         junction.set_stdout_size(8);
@@ -197,14 +231,13 @@ fn do_stuff() {
         junction.add_input(pull_0_1, 0).unwrap();
         junction.add_input(pull_1_0, 1).unwrap();
         junction.initialize_stdin();
-        let mut output_1 = junction.add_output(OutputPort::Out, 0, 0).unwrap();
-        let mut output_2 = junction.add_output(OutputPort::Out, 0, 0).unwrap();
+        let mut output_1 = junction.add_output(OutputPort::Out, Breakable::Error, 0, 0).unwrap();
+        let mut output_2 = junction.add_output(OutputPort::Out, Breakable::Error, 0, 0).unwrap();
 
         let mut back_off = BackOff::new();
-        let mut notifications = MotionNotifications::empty();
 
         assert_eq!(
-            junction.iteration(&mut notifications, &mut back_off).await,
+            junction.iteration(&mut back_off).await,
             Ok((false, 2))
         );
 
@@ -219,7 +252,7 @@ fn do_stuff() {
         );
 
         assert_eq!(
-            junction.iteration(&mut notifications, &mut back_off).await,
+            junction.iteration(&mut back_off).await,
             Ok((false, 2))
         );
         let output_1_result_1 = read_data(&mut output_1).await;
@@ -233,7 +266,7 @@ fn do_stuff() {
         );
 
         assert_eq!(
-            junction.iteration(&mut notifications, &mut back_off).await,
+            junction.iteration(&mut back_off).await,
             Ok((false, 1))
         );
         let output_1_result_2 = read_data(&mut output_1).await;
@@ -247,7 +280,7 @@ fn do_stuff() {
         chan_0_0_snd.close();
 
         assert_eq!(
-            junction.iteration(&mut notifications, &mut back_off).await,
+            junction.iteration(&mut back_off).await,
             Ok((false, 1))
         );
         let output_1_result_2 = read_data(&mut output_1).await;
@@ -258,7 +291,7 @@ fn do_stuff() {
         );
 
         assert_eq!(
-            junction.iteration(&mut notifications, &mut back_off).await,
+            junction.iteration(&mut back_off).await,
             Ok((false, 1))
         );
         let output_1_result_2 = read_data(&mut output_1).await;
@@ -271,7 +304,7 @@ fn do_stuff() {
         chan_0_1_snd.close();
         chan_1_0_snd.close();
         assert_eq!(
-            junction.iteration(&mut notifications, &mut back_off).await,
+            junction.iteration(&mut back_off).await,
             Ok((false, 1))
         );
         let output_1_result_2 = read_data(&mut output_1).await;
@@ -282,7 +315,7 @@ fn do_stuff() {
         );
 
         assert_eq!(
-            junction.iteration(&mut notifications, &mut back_off).await,
+            junction.iteration(&mut back_off).await,
             Ok((true, 1))
         );
 

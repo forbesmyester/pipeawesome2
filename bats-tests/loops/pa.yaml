@@ -29,6 +29,19 @@ launch:
   remove_too_just_right_tag: *remove_tag
   loop_control:
     command: "gawk"
+    description:
+      - |
+        Input comes in on STDIN and starts with either:
+
+          * "NEW_ORDER" Denotes how many input items we have (no ouput)
+          * "JUST_RIGHT" At the correct temperature (output to STDOUT)
+          * Something else... (output to STDERR)
+
+        STDERR is the the loop and STDOUT is the output of the PipeAwesome
+        process.
+
+        When we have as many items seen with "JUST_RIGHT" as as "NEW_ORDER"
+        we must have dealt with all the orders.
     arg:
       - |
         BEGIN {

@@ -1,14 +1,11 @@
-use crate::config::{ Config, ComponentType, Connection };
+use crate::config::{ ComponentType, Connection };
 use crate::connectable::OutputPort;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
 use graphviz_rust::dot_structures::*;
 use graphviz_rust::dot_generator::*;
-use graphviz_rust::{exec, parse};
-use graphviz_rust::cmd::{CommandArg, Format};
 use graphviz_rust::printer::{PrinterContext,DotPrinter};
-use graphviz_rust::attributes::*;
 
 // pub fn get_graph_components(config: &Config) -> HashMap<ComponentType, HashSet<String>> {
 // }
@@ -22,7 +19,7 @@ pub struct GraphConnection<'a> {
 pub fn convert_connection_to_graph_connection<'a>(mut acc: Vec<GraphConnection<'a>>, connections: Vec<&'a Connection>) -> Vec<GraphConnection<'a>> {
 
     let mut src: Option<(&ComponentType, &str, Option<&OutputPort>)> = None;
-    let mut dst: Option<(&ComponentType, &str, Option<&OutputPort>)> = None;
+    let mut dst: Option<(&ComponentType, &str, Option<&OutputPort>)>;
     let mut r: Vec<GraphConnection> = vec![];
 
     for connection in connections {

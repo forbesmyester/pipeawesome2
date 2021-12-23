@@ -1,3 +1,7 @@
+use crate::motion::PullJourney;
+use crate::motion::Journey;
+use crate::connectable::Breakable;
+use std::time::Instant;
 use crate::connectable::Connectable;
 use crate::connectable::ConnectableAddInputError;
 use crate::connectable::OutputPort;
@@ -11,16 +15,16 @@ use async_trait::async_trait;
 pub struct Drain {
     started: bool,
     stdin: Option<Pull>,
-    stdout: Option<Push>,
+    write_location: Option<String>,
 }
 
 impl Drain {
 
-    pub fn new(push: Push) -> Drain {
+    pub fn new(write_location: String) -> Drain {
         Drain {
             started: false,
             stdin: None,
-            stdout: Some(push),
+            write_location: Some(write_location)
         }
     }
 
@@ -29,8 +33,7 @@ impl Drain {
 
 impl Connectable for Drain {
 
-    fn add_output(&mut self, port: OutputPort, _src_id: usize, _dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
-            println!("TAPTAPD");
+    fn add_output(&mut self, port: OutputPort, _breakable: Breakable, _src_id: usize, _dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
         Err(ConnectableAddOutputError::UnsupportedPort(port))
     }
 
@@ -52,8 +55,23 @@ impl Connectable for Drain {
 #[async_trait]
 impl StartableControl for Drain {
     async fn start(&mut self) -> MotionResult<usize> {
+
+
         self.started = true;
-        if let (Some(pull), Some(push)) = (std::mem::take(&mut self.stdin), std::mem::take(&mut self.stdout)) {
+        if let Some(pull) = std::mem::take(&mut self.stdin) {
+
+            let push = match (pull.journey(), std::mem::take(&mut self.write_location)) {
+                (Some(PullJourney { src, dst }), Some(f)) if f == "-" => Push::Stdout(Journey { src: *src, dst: *dst, breakable: Breakable::Error }, async_std::io::stdout()),
+                (Some(PullJourney { src, dst }), Some(f)) if f == "_" => Push::Stderr(Journey { src: *src, dst: *dst, breakable: Breakable::Error }, async_std::io::stderr()),
+                (Some(PullJourney { src, dst }), Some(filename)) => {
+                    let breakable = Breakable::Error;
+                    let file = async_std::fs::File::create(filename).await
+                        .map_err(|e| MotionError::OpenIOError(PullJourney { src: *src, dst: *dst }, Instant::now(), e))?;
+                    Push::File(Journey { src: *src, dst: *dst, breakable }, async_std::io::BufWriter::new(file))
+                },
+                _ => Push::None,
+            };
+
             return motion(pull, MotionNotifications::empty(), push).await
         }
         MotionResult::Err(MotionError::NoneError)

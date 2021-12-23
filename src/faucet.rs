@@ -1,5 +1,10 @@
+use crate::motion::PullJourney;
+use crate::motion::MotionError;
+use std::time::Instant;
+use crate::motion::ReadSplitControl;
 use crate::motion::Journey;
 use crate::connectable::Connectable;
+use crate::connectable::Breakable;
 use crate::connectable::OutputPort;
 use crate::connectable::ConnectableAddOutputError;
 use crate::connectable::ConnectableAddInputError;
@@ -11,21 +16,25 @@ use async_trait::async_trait;
 pub struct Faucet {
     started: bool,
     stdout_size: usize,
-    stdout: Vec<Push>,
-    stdin: Vec<Pull>,
-    control: Option<async_std::channel::Receiver<()>>
+    stdout: Option<Push>,
+    stdin: Option<Pull>,
+    control: Option<async_std::channel::Receiver<()>>,
+    pull_journey: Option<PullJourney>,
+    read_location: Option<String>,
 }
 
 impl Faucet {
 
 
-    pub fn new(pull: Pull) -> Faucet {
+    pub fn new(read_location: String) -> Faucet {
         Faucet {
             started: false,
             stdout_size: 8,
-            stdin: vec![pull],
-            stdout: vec![],
+            stdin: None,
+            stdout: None,
             control: None,
+            pull_journey: None,
+            read_location: Some(read_location),
         }
     }
 
@@ -50,16 +59,18 @@ impl Faucet {
 
 impl Connectable for Faucet {
 
-    fn add_output(&mut self, port: OutputPort, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
+    fn add_output(&mut self, port: OutputPort, breakable: Breakable, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
         if port != OutputPort::Out {
             return Err(ConnectableAddOutputError::UnsupportedPort(port));
         }
-        if !self.stdout.is_empty() {
+        if self.stdout.is_some() {
             return Err(ConnectableAddOutputError::AlreadyAllocated(port));
         }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout.push(Push::IoSender(Journey { src: src_id, dst: dst_id }, child_stdout_push_channel));
-        Ok(Pull::Receiver(Journey { src: src_id, dst: dst_id }, stdout_io_reciever_channel))
+        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
+        let journey = Journey { src: src_id, dst: dst_id, breakable: breakable };
+        self.pull_journey = Some(journey.as_pull_journey());
+        Ok(Pull::Receiver(journey.as_pull_journey(), stdout_io_reciever_channel))
     }
 
     fn add_input(&mut self, _pull: Pull, _unused_priority: isize) -> std::result::Result<(), ConnectableAddInputError> {
@@ -74,12 +85,33 @@ impl Connectable for Faucet {
 impl StartableControl for Faucet {
 
     async fn start(&mut self) -> MotionResult<usize> {
+
+        let read_location = std::mem::take(&mut self.read_location);
+        self.stdin = Some(match (self.pull_journey, read_location) {
+            (Some(journey), Some(f)) if f == "-" => Pull::Stdin(journey, async_std::io::stdin(), ReadSplitControl::new()),
+            (Some(journey), Some(filename)) => {
+                let file = async_std::fs::File::open(filename).await
+                    .map_err(|e| MotionError::OpenIOError(journey, Instant::now(), e))?;
+                Pull::File(journey, file, ReadSplitControl::new())
+            },
+            _ => Pull::None,
+        });
+
+        self.start_secret().await
+
+    }
+
+}
+
+impl Faucet {
+
+    async fn start_secret(&mut self) -> MotionResult<usize> {
         assert!(!self.started);
+
         self.started = true;
         let mut read_count = 0;
 
         let mut notifications = MotionNotifications::empty();
-
         async fn control(opt_rec: &mut Option<Receiver<()>>) {
             if let Some(rec) = opt_rec {
                 if rec.try_recv().is_ok() {
@@ -88,26 +120,44 @@ impl StartableControl for Faucet {
             }
         }
 
-        loop {
-            let r = motion_worker(
-                &mut self.stdin,
-                &mut notifications,
-                &mut self.stdout,
-                false,
-            ).await?.finished_pulls;
-            read_count += 1;
-            if !r.is_empty() {
-                for push in &mut self.stdout {
-                    motion_close(push).await?
-                }
-                if let Some(c) = &self.control {
-                    c.close();
-                }
-                return MotionResult::Ok(read_count);
-            }
+        if let (Some(mut stdin), Some(stdout)) = (std::mem::take(&mut self.stdin), std::mem::take(&mut self.stdout)) {
+            let breakable = stdout.journey().map(|j| j.breakable).unwrap_or(Breakable::Error);
+            let mut stdouts = vec![stdout];
+            loop {
+                match motion_worker(&mut stdin, &mut notifications, &mut stdouts, false).await {
+                    Ok(result) => {
+                        if result.finished {
+                            for push in &mut self.stdout {
+                                motion_close(push).await?
+                            }
+                            if let Some(c) = &self.control {
+                                c.close();
+                            }
+                            return MotionResult::Ok(read_count);
+                        }
+                        read_count += 1;
+                        Ok(())
+                    },
+                    Err(e @ MotionError::OutputClosed(_, _, _, _)) => {
+                        if breakable == Breakable::Error {
+                            return Err(e);
+                        }
+                        if breakable == Breakable::Finish {
+                            return Ok(read_count)
+                        }
+                        read_count += 1;
+                        Ok(())
+                    },
+                    Err(e) => {
+                        Err(e)
+                    }
+                }?;
 
-            control(&mut self.control).await;
+                control(&mut self.control).await;
+            }
         }
+
+        Ok(0)
 
     }
 
@@ -201,14 +251,23 @@ fn do_stuff() {
         };
 
         let (mut input_chan_snd, input_chan_rcv) = bounded(8);
-        let input = Pull::Receiver(Journey { src: 0, dst: 0 }, input_chan_rcv);
+        let input = Pull::Receiver(PullJourney { src: 0, dst: 0 }, input_chan_rcv);
 
-        let mut tap = Faucet::new(input);
+        let mut tap = Faucet {
+            started: false,
+            stdout_size: 8,
+            stdin: Some(input),
+            stdout: None,
+            control: None,
+            pull_journey: None,
+            read_location: None,
+        };
+
         let mut tapcontrol = tap.get_control();
         tap.set_stdout_size(1);
-        let output_1 = tap.add_output(OutputPort::Out, 0, 0).unwrap();
+        let output_1 = tap.add_output(OutputPort::Out, Breakable::Error, 0, 0).unwrap();
 
-        let w0 = tap.start();
+        let w0 = tap.start_secret();
         let w1 = write_data_1(&mut input_chan_snd, &mut tapcontrol);
 
         for (index, vt) in read_data(output_1).join(w0.join(w1)).await.0.iter().enumerate() {

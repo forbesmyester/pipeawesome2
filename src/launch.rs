@@ -1,10 +1,12 @@
 // use pipeawesome2::motion::{Pull, MotionResult, IOData};
+use crate::motion::PullJourney;
 use std::time::Instant;
 use crate::motion::Journey;
 use crate::connectable::ConnectableAddInputError;
 use crate::connectable::ConnectableAddOutputError;
 use crate::connectable::OutputPort;
 use crate::connectable::Connectable;
+use crate::connectable::Breakable;
 use std::ffi::OsStr;
 use async_std::{channel::Sender, prelude::*};
 use std::path::Path;
@@ -46,31 +48,31 @@ impl <E: IntoIterator<Item = (K, V)>,
           R: AsRef<OsStr>,
           > Connectable for Launch<E, P, O, A, K, V, R> {
 
-    fn add_output(&mut self, port: OutputPort, src_id: usize, dst_id: usize) -> Result<Pull, ConnectableAddOutputError> {
+    fn add_output(&mut self, port: OutputPort, breakable: Breakable, src_id: usize, dst_id: usize) -> Result<Pull, ConnectableAddOutputError> {
         match port {
             OutputPort::Err => {
                 if self.stderr.is_some() {
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Err));
                 }
                 let (child_stdout_push_channel, chan_rx) = bounded(1);
-                self.stderr = Some(Push::IoSender(Journey { src: src_id, dst: dst_id }, child_stdout_push_channel));
-                Ok(Pull::Receiver(Journey { src: src_id, dst: dst_id }, chan_rx))
+                self.stderr = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
+                Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, chan_rx))
             },
             OutputPort::Exit => {
                 if self.exit_status.is_some() {
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Exit));
                 }
                 let (child_exit_status_push_channel, chan_rx) = bounded(1);
-                self.exit_status = Some((Journey { src: src_id, dst: dst_id }, child_exit_status_push_channel));
-                Ok(Pull::Receiver(Journey { src: src_id, dst: dst_id }, chan_rx))
+                self.exit_status = Some((Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_exit_status_push_channel));
+                Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, chan_rx))
             },
             OutputPort::Out => {
                 if self.stdout.is_some() {
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Out));
                 }
                 let (child_stdout_push_channel, chan_rx) = bounded(1);
-                self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id }, child_stdout_push_channel));
-                Ok(Pull::Receiver(Journey { src: src_id, dst: dst_id }, chan_rx))
+                self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
+                Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, chan_rx))
             }
         }
     }
@@ -182,7 +184,7 @@ impl <E: IntoIterator<Item = (K, V)>,
         let child_stdin_push = match std::mem::take(&mut child.stdin) {
             Some(stdin) => {
                 let src = child_stdin_pull.journey().map(|j| j.src).unwrap_or(self.id);
-                Push::CmdStdin(Journey { src, dst: self.id }, stdin)
+                Push::CmdStdin(Journey { src, dst: self.id, breakable: Breakable::Finish }, stdin)
             },
             None => Push::None,
         };
@@ -192,7 +194,7 @@ impl <E: IntoIterator<Item = (K, V)>,
         let (stdout_pull, stdout_push) = match (std::mem::take(&mut child.stdout), std::mem::take(&mut self.stdout)) {
             (Some(stdout), Some(push)) => {
                 let dst = push.journey().map(|j| j.dst).unwrap_or(self.id);
-                let pull = Pull::CmdStdout(Journey { src: self.id, dst }, stdout, ReadSplitControl::new());
+                let pull = Pull::CmdStdout(PullJourney { src: self.id, dst }, stdout, ReadSplitControl::new());
                 (pull, push)
             },
             _ => {
@@ -208,7 +210,7 @@ impl <E: IntoIterator<Item = (K, V)>,
         let (stderr_pull, stderr_push) = match (std::mem::take(&mut child.stderr), std::mem::take( &mut self.stderr)) {
             (Some(stderr), Some(push)) => {
                 let dst = push.journey().map(|j| j.dst).unwrap_or(self.id);
-                let pull = Pull::CmdStderr(Journey { src: self.id, dst }, stderr, ReadSplitControl::new());
+                let pull = Pull::CmdStderr(PullJourney { src: self.id, dst }, stderr, ReadSplitControl::new());
                 (pull, push)
             },
             _ => {

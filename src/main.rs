@@ -80,7 +80,6 @@ fn get_clap_app() -> App<'static, 'static> {
             SubCommand::with_name("config")
                 .arg(get_required_arg_with("config", "The config file to read, \"-\" for STDIN. If not specified it will be blank", "FILENAME"))
                 .arg(config_format())
-                .arg(get_required_arg_with("config-out", "The config file to write, \"-\" for STDOUT. Defaults to the file being read (otherwise STDOUT)", "FILENAME"))
                 .subcommand(
                     SubCommand::with_name("empty")
                 )
@@ -157,7 +156,6 @@ struct UserConfigOptionBase {
     id: String,
     config_in: String,
     config_format: ConfigFormat,
-    config_out: String,
 }
 
 #[derive(Debug)]
@@ -279,17 +277,16 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
 
         let standard_options = (
             first,
-            first_sub_command.map(|sc1| sc1.value_of("config-out")).flatten().or(first),
             second_sub_command.map(|sc2| sc2.value_of("id")).flatten(),
             second_name
         );
 
         match standard_options {
-            (Some(config_in), Some(config_out), Some(id), _) => {
-                Ok(UserConfigOptionBase { config_format: fmt, config_in: config_in.to_string(), config_out: config_out.to_string(), id: id.to_string() })
+            (Some(config_in), Some(id), _) => {
+                Ok(UserConfigOptionBase { config_format: fmt, config_in: config_in.to_string(), id: id.to_string() })
             },
-            (_, _, None, Some(second_name)) => Err(format!("You need to specify an id for the '{}'", second_name)),
-            (_, _, None, _) => Err("You didn't correctly specify what to configure".to_string()),
+            (_, None, Some(second_name)) => Err(format!("You need to specify an id for the '{}'", second_name)),
+            (_, None, _) => Err("You didn't correctly specify what to configure".to_string()),
             _ => Err("Somehow we didn't understand those commands".to_string())
         }
 
@@ -577,7 +574,7 @@ fn waiter_error_to_string(waiter_err: WaiterError, waiter: &Waiter) -> String {
     let waiter_src: Option<(&ComponentType, &String)> = waiter_err.caused_by_error_source();
     let motion_src: Option<&(ComponentType, String)> = waiter_err.caused_by_error().map(|x| x.journey_source()).flatten().map(|src| waiter.id_to_component_type_name(src)).flatten();
     let motion_dst: Option<&(ComponentType, String)> = match waiter_err.caused_by_error().map(|x| x.journey()).flatten() {
-        Some(Journey { src: _, dst }) => waiter.id_to_component_type_name(dst),
+        Some(Journey { src: _, dst, breakable: _ }) => waiter.id_to_component_type_name(dst),
         None => None
     };
     let (src, dst) = match (waiter_src, motion_src, motion_dst) {

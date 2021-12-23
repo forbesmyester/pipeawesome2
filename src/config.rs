@@ -1,9 +1,11 @@
+use crate::connectable::InputPort;
 use std::collections::HashSet;
 use std::collections::HashMap;
 
 use peg::{error::ParseError, str::LineCol};
 use serde::{Deserialize, Serialize};
-use crate::connectable::OutputPort;
+use crate::connectable::{Breakable, OutputPort};
+
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize, Hash, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -61,14 +63,6 @@ pub struct DrainConfig {
     pub destination: String,
 }
 
-
-#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-#[serde(tag = "input_port", content = "priority")]
-pub enum InputPort {
-    In(isize),
-}
-
 struct ComponentIdentifier ( ComponentType, String );
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
@@ -92,6 +86,40 @@ pub enum Connection {
         #[serde(flatten)]
         input_port: InputPort,
     }
+}
+
+impl Connection {
+    fn as_input_breakable(self, breakable: Breakable) -> Self {
+        match self {
+            Connection::MiddleConnection { component_type, component_name, mut input_port, output_port } => {
+                input_port.breakable = breakable;
+                Connection::MiddleConnection {
+                    component_type,
+                    component_name,
+                    input_port,
+                    output_port
+                }
+            },
+            Connection::StartConnection { .. } => {
+                panic!("Start connections cannot be marked as input breakable!");
+            },
+            Connection::EndConnection { component_type, component_name, mut input_port } => {
+                input_port.breakable = breakable;
+                Connection::EndConnection {
+                    component_type,
+                    component_name,
+                    input_port,
+                }
+            },
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum ParserConnection {
+    Connection(Connection),
+    Pipe(Breakable)
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
@@ -130,7 +158,6 @@ pub enum ConfigLintWarning {
 }
 
 impl ToString for ConfigLintWarning {
-
 
     fn to_string(&self) -> std::string::String {
         match self {
@@ -412,29 +439,34 @@ fn config_serde() {
 
     assert_eq!(
         serde_json::from_str::<Connection>(r#"{"component_type": "drain", "component_name": "x", "input_port": "in", "priority": 5}"#).unwrap(),
-        Connection::EndConnection { component_type: ComponentType::Drain, component_name: "x".to_string(), input_port: InputPort::In(5) }
+        Connection::EndConnection { component_type: ComponentType::Drain, component_name: "x".to_string(), input_port: InputPort { breakable: Breakable::Error, priority: 5 } }
     );
 
     // pa --faucet-src=- --drain-dst=- --faucet-min-max tap100,1000 --launch-command command_1=cat --launch-command command_2=cat --launch-env command_2=USER=forbesmyester --launch-arg command_2=-n --launch-path command_2=/home/forbesmyester --connection 0='command1[S] | tap'
 
     assert_eq!(
         serde_json::from_str::<Config>(r#"{
-            "launch": {
-                "command_1": { "command": "cat" },
-                "command_2": { "command": "cat", "env": { "USER": "forbesmyester" }, "arg": ["-n"], "path": "/home/forbesmyester" }
-            },
-            "faucet": {
-                "tap": {
-                    "buffered": [500, 1000],
-                    "monitored_buffers": ["abc", "def"]
-                }
-            },
-            "connection": {
-                "ynmds": [ { "component_type": "faucet", "component_name": "tap", "output_port": "out" }, { "component_type": "launch", "component_name": "command_1", "output_port": "out", "input_port": "in", "priority": 3 }],
-                "trfxg": "command_1 | command_2",
-                "ynbhz": [ { "component_type": "launch", "component_name": "command_2", "output_port": "out", "input_port": "in", "priority": 3 }, { "component_type": "drain", "component_name": "drain", "input_port": "in", "priority": 3 } ]
+              "faucet": {
+                "tap": { "buffered": [ 500, 1000 ], "monitored_buffers": [ "abc", "def" ], "source": "-" }
+              },
+              "drain": {},
+              "launch": {
+                "command_2": { "command": "cat", "path": "/home/forbesmyester", "env": { "USER": "forbesmyester" }, "arg": [ "-n" ] },
+                "command_1": { "command": "cat", "path": null, "env": {}, "arg": [] }
+              },
+              "connection": {
+                "ynmds": [
+                  { "component_type": "faucet", "component_name": "tap", "output_port": "out" },
+                  { "component_type": "launch", "component_name": "command_1", "breakable": "error", "priority": 3, "output_port": "out" }
+                ],
+                "ynbhz": [
+                  { "component_type": "launch", "component_name": "command_2", "breakable": "error", "priority": 3, "output_port": "out" },
+                  { "component_type": "drain", "component_name": "drain", "priority": 3 }
+                ],
+                "trfxg": "command_1 | command_2"
+              }
             }
-        }"#).unwrap(),
+        "#).unwrap(),
         Config {
                 faucet: HashMap::<_, _>::from_iter([("tap".to_string(), FaucetConfig { source: "-".to_string(), buffered: Some((500, 1000)), monitored_buffers: vec!["abc".to_string(), "def".to_string()] })]),
                 drain: HashMap::new(),
@@ -452,7 +484,7 @@ fn config_serde() {
                         "ynmds".to_string(),
                         DeserializedConnection::Connections(vec![
                             Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out },
-                            Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, input_port: InputPort::In(3) },
+                            Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Error, priority: 3 } },
                         ])
                     ),
                     (
@@ -462,8 +494,8 @@ fn config_serde() {
                     (
                         "ynbhz".to_string(),
                         DeserializedConnection::Connections(vec![
-                            Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, input_port: InputPort::In(3) },
-                            Connection::EndConnection { component_type: ComponentType::Drain, component_name: "drain".to_string(), input_port: InputPort::In(3) }
+                            Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Error, priority: 3 } },
+                            Connection::EndConnection { component_type: ComponentType::Drain, component_name: "drain".to_string(), input_port: InputPort { breakable: Breakable::Error, priority: 3 } }
                         ])
                     )
                 ])
@@ -489,6 +521,7 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
         grammar connection_parser() for str {
 
             use self::Connection;
+            use self::ParserConnection;
 
             rule component_name() -> String
                 = s:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_' ]+) { s.to_string() }
@@ -497,7 +530,7 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                 = n:$("-"?['0'..='9']*) { n.parse().unwrap_or(0) }
 
             rule in_port() -> InputPort
-                = "[" p:port_preference() "]" { InputPort::In(p) }
+                = "[" p:port_preference() "]" { InputPort { breakable: Breakable::Error, priority: p } }
 
             rule component_type() -> ComponentType
                 = t:$("faucet" / "drain" / "junction" / "buffer" / "launch" / "f" / "d" / "j" / "b" / "l") {
@@ -532,107 +565,133 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                     }
                 }
 
-            rule pipe() -> bool
-                = " "* ("|" / "="+) " "* { true }
+            rule pipe() -> ParserConnection
+                = " "* p:$(['|'|'~'|'*']) " "* {
+                    match p {
+                        "*" => ParserConnection::Pipe(Breakable::Finish),
+                        "~" => ParserConnection::Pipe(Breakable::Consume),
+                        _ => ParserConnection::Pipe(Breakable::Error),
+                    }
+                }
 
-            rule component_middle_full() -> Connection
+            rule component_middle_full() -> ParserConnection
                 = l:in_port() r:port_preference() i:identifier() o:out_port() {
-                    Connection::MiddleConnection {
+                    ParserConnection::Connection(Connection::MiddleConnection {
                         component_type: i.0,
                         component_name: i.1,
                         input_port: l,
                         output_port: o
-                    }
+                    })
                  }
 
-            rule component_middle_default_input() -> Connection
+            rule component_middle_default_input() -> ParserConnection
                 =  i:identifier() o:out_port() {
-                    Connection::MiddleConnection {
+                    ParserConnection::Connection(Connection::MiddleConnection {
                         component_type: i.0,
                         component_name: i.1,
-                        input_port: InputPort::In(0),
+                        input_port: InputPort { breakable: Breakable::Error, priority: 0 },
                         output_port: o,
-                    }
+                    })
                 }
 
-            rule component_middle_quick() -> Connection
+            rule component_middle_quick() -> ParserConnection
                 = i:identifier() {
-                    Connection::MiddleConnection {
+                    ParserConnection::Connection(Connection::MiddleConnection {
                         component_type: i.0,
                         component_name: i.1,
-                        input_port: InputPort::In(0),
+                        input_port: InputPort { breakable: Breakable::Error, priority: 0 },
                         output_port: OutputPort::Out,
-                    }
+                    })
                 }
 
-            rule component_middle()  -> Connection
+            rule component_middle() -> ParserConnection
                 = x:( component_middle_full() / component_middle_default_input() / component_middle_quick() ) { x }
 
-            rule component_start_full() -> Connection
+            rule component_start_full() -> ParserConnection
                 = i:identifier() o:out_port() {
-                    Connection::StartConnection {
+                    ParserConnection::Connection(Connection::StartConnection {
                         component_type: i.0,
                         component_name: i.1,
                         output_port: o
-                    }
+                    })
                 }
 
-            rule component_start_quick() -> Connection
+            rule component_start_quick() -> ParserConnection
                 = i:identifier() {
-                    Connection::StartConnection {
+                    ParserConnection::Connection(Connection::StartConnection {
                         component_type: i.0,
                         component_name: i.1,
                         output_port: OutputPort::Out
-                    }
+                    })
                 }
 
-            rule component_start() -> Connection
+            rule component_start() -> ParserConnection
                 = c:component_start_full() / c: component_start_quick() { c }
 
-            rule component_end_full()  -> Connection
+            rule component_end_full()  -> ParserConnection
                 = l:in_port() r:port_preference() i:identifier() {
-                    Connection::EndConnection {
+                    ParserConnection::Connection(Connection::EndConnection {
                         component_type: i.0,
                         component_name: i.1,
                         input_port: l,
-                    }
+                    })
                 }
 
-            rule component_end_quick()  -> Connection
+            rule component_end_quick()  -> ParserConnection
                 = i:identifier() {
-                    Connection::EndConnection {
+                    ParserConnection::Connection(Connection::EndConnection {
                         component_type: i.0,
                         component_name: i.1,
-                        input_port: InputPort::In(0),
-                    }
+                        input_port: InputPort { breakable: Breakable::Error, priority: 0 },
+                    })
                 }
 
-            rule component_end() -> Connection
+            rule component_end() -> ParserConnection
                 = c:( component_end_full() / component_end_quick() ) { c }
 
-            rule line_middle() -> Connection
-                = m:component_middle() pipe() {
-                    m
+            rule line_middle() -> Vec<ParserConnection>
+                = m:component_middle() p:pipe() {
+                    vec![m, p]
                 }
 
-            pub rule connection_set_has() -> Vec<Connection>
-                = s:component_start() pipe() m:line_middle()* e:component_end() {
+            pub rule connection_set_has() -> Vec<ParserConnection>
+                = s:component_start() p:pipe() m:line_middle()* e:component_end() {
                     let mut r = vec![s];
-                    r.extend_from_slice(&m);
+                    r.push(p);
+                    for mut m_item in m {
+                        r.append(&mut m_item);
+                    }
                     r.extend_from_slice(&[e]);
                     r
                 }
 
-            pub rule connection_set_none() -> Vec<Connection>
+            pub rule connection_set_none() -> Vec<ParserConnection>
                 = "" { vec![] }
 
-            pub rule connection_set() -> Vec<Connection>
+            pub rule connection_set() -> Vec<ParserConnection>
                 = x:( connection_set_has() / connection_set_none() ) { x }
 
         }
     }
 
-    connection_parser::connection_set(s)
+    let mut breakable = None;
+    let mut acc: Vec<Connection> = vec![];
+    for pc in connection_parser::connection_set(s)? {
+        match pc {
+            ParserConnection::Connection(x) => {
+                if let Some(breakable) = breakable {
+                    acc.push(x.as_input_breakable(breakable));
+                } else {
+                    acc.push(x);
+                }
+                breakable = None
+            },
+            ParserConnection::Pipe(b) => { breakable = Some(b) },
+        }
+    }
+
+    Ok(acc)
+
 
 }
 
@@ -646,13 +705,13 @@ fn test_load_connection_from_string() {
     );
 
     assert_eq!(
-        load_connection_from_string("f:faucet[O] | [22]l:command[E] | buffer:x | l:y[O] | [-2]d:drain").unwrap(),
+        load_connection_from_string("f:faucetx[O] * [22]l:command[E] | buffer:x | l:y[O] | [-2]d:drain").unwrap(),
         vec![
-            Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "faucet".to_string(), output_port: OutputPort::Out },
-            Connection::MiddleConnection { input_port: InputPort::In(22), component_type: ComponentType::Launch, component_name: "command".to_string(), output_port: OutputPort::Err },
-            Connection::MiddleConnection { input_port: InputPort::In(0), component_type: ComponentType::Buffer, component_name: "x".to_string(), output_port: OutputPort::Out },
-            Connection::MiddleConnection { input_port: InputPort::In(0), component_type: ComponentType::Launch, component_name: "y".to_string(), output_port: OutputPort::Out },
-            Connection::EndConnection { input_port: InputPort::In(-2), component_type: ComponentType::Drain, component_name: "drain".to_string() },
+            Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "faucetx".to_string(), output_port: OutputPort::Out },
+            Connection::MiddleConnection { input_port: InputPort { breakable: Breakable::Finish, priority: 22 }, component_type: ComponentType::Launch, component_name: "command".to_string(), output_port: OutputPort::Err },
+            Connection::MiddleConnection { input_port: InputPort { breakable: Breakable::Error, priority: 0 }, component_type: ComponentType::Buffer, component_name: "x".to_string(), output_port: OutputPort::Out },
+            Connection::MiddleConnection { input_port: InputPort { breakable: Breakable::Error, priority: 0 }, component_type: ComponentType::Launch, component_name: "y".to_string(), output_port: OutputPort::Out },
+            Connection::EndConnection { input_port: InputPort { breakable: Breakable::Error, priority: -2 }, component_type: ComponentType::Drain, component_name: "drain".to_string() },
         ]
     );
 
@@ -660,7 +719,7 @@ fn test_load_connection_from_string() {
         load_connection_from_string("f:faucet[O] | [3]d:drain").unwrap(),
         vec![
             Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "faucet".to_string(), output_port: OutputPort::Out },
-            Connection::EndConnection { input_port: InputPort::In(3), component_type: ComponentType::Drain, component_name: "drain".to_string() },
+            Connection::EndConnection { input_port: InputPort { breakable: Breakable::Error, priority: 3 }, component_type: ComponentType::Drain, component_name: "drain".to_string() },
         ]
     );
 
@@ -691,7 +750,6 @@ fn test_lint() {
     }"#;
 
     let mut config = serde_json::from_str::<Config>(config_string).unwrap();
-    println!("{:?}", config);
     assert_eq!(
         HashSet::<_>::from_iter([
             ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "drain".to_string(), component_type: ComponentType::Drain, component_name: "plug".to_string() },
