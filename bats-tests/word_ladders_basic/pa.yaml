@@ -1,10 +1,12 @@
 connection:
-  # input_tap: "f:input_tap  | l:input_lower_ascii | l:dict_shuf | j:input"
-  # dict: "j:input | l:dict_protocol | j:funnel"
-  # debug: "j:funnel | d:output"
-  start: "f:input | l:cat | l:only_one | j:output"
+  input_tap: "f:input | l:letter_count | l:lower_ascii | l:shuf | j:input"
+  dict: "j:input | l:dict_protocol | j:funnel"
+  start_word: "j:input |C| l:only_one | l:start_protocol | j:funnel"
+  debug: "j:funnel | l:combine | l:combine_sort | j:output"
+  output: "j:output | d:output"
+  # start: "j:input | l:cat | l:only_one | j:output"
   # test_out: "j:funnel | l:it_takes_two | j:output"
-  out_drain: "j:output | d:output"
+  # out_drain: "j:output | d:output"
   # error_seek_exit: "l:it_takes_two[X] | j:output"
   # error_seek_err: "l:it_takes_two[E] | j:output"
   # error_seek_err2: "l:dict_protocol[X] | j:output"
@@ -26,38 +28,30 @@ launch:
       - 'ID=DICT'
       - &x |
         {
-          print ID ": " $0
+          print ID ":WORD:" $0
           fflush()
         }
         END {
-          print ID " END:"
+          print ID ":END:"
           fflush()
         }
-  only_one: { command: "head", arg: [ '-n', '10' ] }
-  start_protocol: { command: "awk", arg: [ '-v', 'ID=LADDER', *x ] }
-  dict_shuf: { command: "shuf", arg: [ '-n', 15 ] }
-  input_shuf_1: { command: "shuf", arg: [ '-n', 1 ] }
-  dict_lower_ascii: &lower_ascii { command: "grep", arg: [ '^[a-z]\{5\}$' ] }
-  input_lower_ascii: *lower_ascii
-  it_takes_two:
-    # TODO: Ensure that message that go to a command that has exited go somewhere!
+  start_protocol: { command: "awk", arg: [ '-v', 'ID=BEGIN', *x ] }
+  only_one: { command: "head", arg: [ '-n', '1' ] }
+  letter_count: { env: { "LC_ALL": "C" }, command: "grep", arg: [ '^....$' ] }
+  lower_ascii: { command: "grep", arg: [ '^[a-z]*$' ] }
+  shuf: { command: "shuf" }
+  combine_sort: { command: "sort", arg: [ "-k", "1,1", "-t", ":", "-s" ] }
+  combine:
     command: "awk"
     arg:
       - '-F'
       - ':'
       - |
-        BEGIN {
-          END_COUNT=0
-          fflush()
-        }
-        {
-          print $0;
-          fflush()
-        }
-        $1 ~ /END$/ {
+        $2 != "END" { print $1 ":" $3; }
+        $2 == "END" {
           END_COUNT++
           if (END_COUNT >= 2) {
-            print "ENDED"
+            print "END:"
             exit
           }
         }

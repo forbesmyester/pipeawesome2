@@ -231,8 +231,8 @@ fn do_stuff() {
         junction.add_input(pull_0_1, 0).unwrap();
         junction.add_input(pull_1_0, 1).unwrap();
         junction.initialize_stdin();
-        let mut output_1 = junction.add_output(OutputPort::Out, Breakable::Error, 0, 0).unwrap();
-        let mut output_2 = junction.add_output(OutputPort::Out, Breakable::Error, 0, 0).unwrap();
+        let mut output_1 = junction.add_output(OutputPort::Out, Breakable::Terminate, 0, 0).unwrap();
+        let mut output_2 = junction.add_output(OutputPort::Out, Breakable::Terminate, 0, 0).unwrap();
 
         let mut back_off = BackOff::new();
 

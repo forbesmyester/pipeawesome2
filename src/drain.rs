@@ -61,10 +61,10 @@ impl StartableControl for Drain {
         if let Some(pull) = std::mem::take(&mut self.stdin) {
 
             let push = match (pull.journey(), std::mem::take(&mut self.write_location)) {
-                (Some(PullJourney { src, dst }), Some(f)) if f == "-" => Push::Stdout(Journey { src: *src, dst: *dst, breakable: Breakable::Error }, async_std::io::stdout()),
-                (Some(PullJourney { src, dst }), Some(f)) if f == "_" => Push::Stderr(Journey { src: *src, dst: *dst, breakable: Breakable::Error }, async_std::io::stderr()),
+                (Some(PullJourney { src, dst }), Some(f)) if f == "-" => Push::Stdout(Journey { src: *src, dst: *dst, breakable: Breakable::Terminate }, async_std::io::stdout()),
+                (Some(PullJourney { src, dst }), Some(f)) if f == "_" => Push::Stderr(Journey { src: *src, dst: *dst, breakable: Breakable::Terminate }, async_std::io::stderr()),
                 (Some(PullJourney { src, dst }), Some(filename)) => {
-                    let breakable = Breakable::Error;
+                    let breakable = Breakable::Terminate;
                     let file = async_std::fs::File::create(filename).await
                         .map_err(|e| MotionError::OpenIOError(PullJourney { src: *src, dst: *dst }, Instant::now(), e))?;
                     Push::File(Journey { src: *src, dst: *dst, breakable }, async_std::io::BufWriter::new(file))

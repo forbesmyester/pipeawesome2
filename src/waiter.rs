@@ -504,7 +504,7 @@ pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
 
         if let Some((src_id, src_output_port)) = last {
 
-            let mut dst_input_port = Some(InputPort { priority: 0, breakable: Breakable::Error });
+            let mut dst_input_port = Some(InputPort { priority: 0, breakable: Breakable::Terminate });
             std::mem::swap(&mut create_spec.input_port, &mut dst_input_port);
 
             if let Some(dst_input_port) = dst_input_port {

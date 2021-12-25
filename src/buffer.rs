@@ -234,7 +234,7 @@ fn do_stuff() {
         let mut buffer = Buffer::new();
         buffer.set_stdout_size(1);
         buffer.add_input(input, 0).unwrap();
-        let output = buffer.add_output(OutputPort::Out, Breakable::Error, 0, 0).unwrap();
+        let output = buffer.add_output(OutputPort::Out, Breakable::Terminate, 0, 0).unwrap();
         let monitoring = buffer.add_buffer_size_monitor();
         let buffer_motion = buffer.start();
         match buffer_motion.join(read_data(output)).join(read_monitoring(monitoring)).await {

@@ -121,7 +121,7 @@ impl Faucet {
         }
 
         if let (Some(mut stdin), Some(stdout)) = (std::mem::take(&mut self.stdin), std::mem::take(&mut self.stdout)) {
-            let breakable = stdout.journey().map(|j| j.breakable).unwrap_or(Breakable::Error);
+            let breakable = stdout.journey().map(|j| j.breakable).unwrap_or(Breakable::Terminate);
             let mut stdouts = vec![stdout];
             loop {
                 match motion_worker(&mut stdin, &mut notifications, &mut stdouts, false).await {
@@ -139,7 +139,7 @@ impl Faucet {
                         Ok(())
                     },
                     Err(e @ MotionError::OutputClosed(_, _, _, _)) => {
-                        if breakable == Breakable::Error {
+                        if breakable == Breakable::Terminate {
                             return Err(e);
                         }
                         if breakable == Breakable::Finish {
@@ -265,7 +265,7 @@ fn do_stuff() {
 
         let mut tapcontrol = tap.get_control();
         tap.set_stdout_size(1);
-        let output_1 = tap.add_output(OutputPort::Out, Breakable::Error, 0, 0).unwrap();
+        let output_1 = tap.add_output(OutputPort::Out, Breakable::Terminate, 0, 0).unwrap();
 
         let w0 = tap.start_secret();
         let w1 = write_data_1(&mut input_chan_snd, &mut tapcontrol);

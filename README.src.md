@@ -198,3 +198,13 @@ The only other thing to note is that commands have three outputs "OUT" "ERR" and
 This is a [Rust](https://www.rust-lang.org/) project. I used [RustUp](https://rustup.rs/) to install Rust (1.45) which is very easy to nowadays.
 
 I have developed and tested this on Ubuntu 20.04 and have done rudimentary testing on Windows. I have not tested it on MacOS yet but it compiled and ran first time on Windows so it's probably going to be OK... If not PR's are always welcome 😃.
+
+## Generating Graphs
+
+    TMP_DIR=$(mktemp -d)
+    ./target/debug/pipeawesome2 graph --legend-only  --config bats-tests/word_ladders_basic/pa.yaml | dot -Tpng > "${TMP_DIR}/legend.png"
+    ./target/debug/pipeawesome2 graph --diagram-only --config bats-tests/word_ladders_basic/pa.yaml | dot -Tpng > "${TMP_DIR}/diagram.png"
+    convert "${TMP_DIR}/diagram.png" "${TMP_DIR}/legend.png" -gravity east -append full_diagram.png
+    xdg-open full_diagram.png
+    rm -rf "${TMP_DIR}"
+

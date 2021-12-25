@@ -450,10 +450,10 @@ pub async fn motion_worker(pull: &mut Pull, monitor: &mut MotionNotifications, p
     let mut unfinished_push_count = pushs.len();
 
     for push in pushs {
-        match (push.journey().map(|j| j.breakable).unwrap_or(Breakable::Error), data.clone()) {
+        match (push.journey().map(|j| j.breakable).unwrap_or(Breakable::Terminate), data.clone()) {
             (_, IODataWrapper::Finished) => Ok(()),
             (_, IODataWrapper::Skipped) => MotionResult::Ok(()),
-            (Breakable::Error, IODataWrapper::IOData(iodata)) => motion_write(push, iodata).await,
+            (Breakable::Terminate, IODataWrapper::IOData(iodata)) => motion_write(push, iodata).await,
             (breakable, IODataWrapper::IOData(iodata)) => {
                 match motion_write(push, iodata).await {
                     Err(MotionError::OutputClosed(_, _, _, _)) => {
@@ -534,8 +534,8 @@ fn test_motion_worker_output_closed_unbreakable() {
 
         let mut motion_pull = Pull::Mock(PullJourney { src: 0, dst: 1 }, source_1);
         let mut motion_push = vec![
-            Push::Sender(Journey { src: 0, dst: 1, breakable: Breakable::Error }, output_send_1),
-            Push::Sender(Journey { src: 0, dst: 2, breakable: Breakable::Error }, output_send_2)
+            Push::Sender(Journey { src: 0, dst: 1, breakable: Breakable::Terminate }, output_send_1),
+            Push::Sender(Journey { src: 0, dst: 2, breakable: Breakable::Terminate }, output_send_2)
         ];
 
         let mut notifications = MotionNotifications {
@@ -685,8 +685,8 @@ fn test_motion_worker_skipped_input() {
         let (monitor_written_sender, montitor_written_receiver) = bounded(2);
 
         let mut motion_push = vec![
-            Push::Sender(Journey { src: 0, dst: 1, breakable: Breakable::Error }, output_send_1),
-            Push::Sender(Journey { src: 0, dst: 2, breakable: Breakable::Error }, output_send_2)
+            Push::Sender(Journey { src: 0, dst: 1, breakable: Breakable::Terminate }, output_send_1),
+            Push::Sender(Journey { src: 0, dst: 2, breakable: Breakable::Terminate }, output_send_2)
         ];
 
         let mut notifications = MotionNotifications {

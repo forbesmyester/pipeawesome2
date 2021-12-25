@@ -11,7 +11,7 @@ digraph G {
             faucet_push [label=push]
             style="rounded"
         }
-        fauct_exit_pull [label=pull]
+        fauct_exit_pull [shape=plaintext, label=""]
         faucet_pull -> faucet_push
         faucet_push -> fauct_exit_pull [style=dashed]
     }
@@ -68,9 +68,9 @@ digraph G {
         launch_exit_send_push -> launch_exit_outer [style=dashed]
         subgraph cluster_launch_outputs {
             color=white
-            launch_stderr_outer [label=pull]
-            launch_stdout_outer [label=pull]
-            launch_exit_outer [label=pull]
+            launch_stderr_outer [shape=plaintext, label=""]
+            launch_stdout_outer [shape=plaintext, label=""]
+            launch_exit_outer [shape=plaintext, label=""]
         }
     }
 
@@ -90,7 +90,7 @@ digraph G {
         }
         buffer_input_push -> buffer_pull [style=dashed]
         buffer_pull -> buffer_push
-        buffer_exit_pull [label=pull]
+        buffer_exit_pull [shape=plaintext, label=""]
         buffer_inner_push -> buffer_exit_pull [style=dashed]
     }
 
@@ -113,8 +113,8 @@ digraph G {
         junction_pull_2 -> junction_push_1
         junction_pull_1 -> junction_push_2
         junction_pull_2 -> junction_push_2
-        junction_exit_pull_1 [label="pull"]
-        junction_exit_pull_2 [label="pull"]
+        junction_exit_pull_1 [shape=plaintext, label=""]
+        junction_exit_pull_2 [shape=plaintext, label=""]
         junction_push_1 -> junction_exit_pull_1 [style=dashed]
         junction_push_2 -> junction_exit_pull_2 [style=dashed]
     }

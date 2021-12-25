@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub enum Breakable {
     Consume,
     Finish,
-    Error
+    Terminate
 }
 
 #[derive(Copy, Debug, PartialEq, Clone, Deserialize, Serialize)]
@@ -20,7 +20,7 @@ pub enum OutputPort {
     // Overflow,
 }
 
-fn default_input_port_breakable() -> Breakable { Breakable::Error }
+fn default_input_port_breakable() -> Breakable { Breakable::Terminate }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
