@@ -11,35 +11,35 @@ use graphviz_rust::printer::{PrinterContext,DotPrinter};
 // }
 
 pub struct GraphConnection<'a> {
-    src: (&'a ComponentType, &'a str),
+    src: (&'a ComponentType, &'a str, &'a Option<String>),
     via: &'a OutputPort,
-    dst: (&'a ComponentType, &'a str),
+    dst: (&'a ComponentType, &'a str, &'a Option<String>),
 }
 
 pub fn convert_connection_to_graph_connection<'a>(mut acc: Vec<GraphConnection<'a>>, connections: Vec<&'a Connection>) -> Vec<GraphConnection<'a>> {
 
-    let mut src: Option<(&ComponentType, &str, Option<&OutputPort>)> = None;
-    let mut dst: Option<(&ComponentType, &str, Option<&OutputPort>)>;
+    let mut src: Option<(&ComponentType, &str, Option<&OutputPort>, &Option<String>)> = None;
+    let mut dst: Option<(&ComponentType, &str, Option<&OutputPort>, &Option<String>)>;
     let mut r: Vec<GraphConnection> = vec![];
 
     for connection in connections {
         dst = match connection {
-            Connection::MiddleConnection { component_type, component_name, output_port, .. } => Some((component_type, component_name, Some(output_port))),
-            Connection::StartConnection { component_type, component_name, output_port } => Some((component_type, component_name, Some(output_port))),
-            Connection::EndConnection { component_type, component_name, .. } => Some((component_type, component_name, None)),
+            Connection::MiddleConnection { component_type, component_name, output_port, connection_set, .. } => Some((component_type, component_name, Some(output_port), connection_set)),
+            Connection::StartConnection { component_type, component_name, output_port, connection_set } => Some((component_type, component_name, Some(output_port), connection_set)),
+            Connection::EndConnection { component_type, component_name, connection_set, .. } => Some((component_type, component_name, None, connection_set)),
         };
         match (src, dst) {
-            (Some((src_0, src_1, Some(src_2))), Some(dst)) => {
+            (Some((src_0, src_1, Some(src_2), connection_set)), Some(dst)) => {
                 r.push(GraphConnection {
-                    src: (src_0, src_1),
+                    src: (src_0, src_1, connection_set),
                     via: src_2,
-                    dst: (dst.0, dst.1),
+                    dst: (dst.0, dst.1, &dst.3),
                 });
             },
             _ => (),
         }
         src = match dst {
-            Some((dst_type, dst_name, Some(output_port))) => Some((dst_type, dst_name, Some(output_port))),
+            Some((dst_type, dst_name, Some(output_port), connection_set)) => Some((dst_type, dst_name, Some(output_port), connection_set)),
             _ => None,
         };
     }
@@ -112,24 +112,59 @@ pub fn get_diagram(components: HashMap<&ComponentType, HashSet<&str>>, connectio
         NodeId(Id::Plain(format!("{}_{}", component_type_to_letter(component_type), name)), None)
     }
 
-    let graph_components: Vec<Node> = components.iter().fold(
-        vec![],
+    fn get_connection_set_name(possible_graph_connection_for_connection_set: Option<&GraphConnection>, component_type: &ComponentType, component_name: &str) -> String {
+
+        fn taker(to_take: &Option<String>) -> String {
+            match to_take {
+                None => "".to_string(),
+                Some(ref_str) => {
+                    ref_str.to_owned()
+                },
+            }
+        }
+
+        if let Some(gc) = possible_graph_connection_for_connection_set {
+            if (gc.src.1 == component_name) && (gc.src.0 == component_type) {
+                return taker(gc.src.2)
+            }
+            return taker(gc.dst.2)
+        }
+        "".to_string()
+    }
+
+    let graph_components: HashMap<String, Vec<Node>> = components.iter().fold(
+        HashMap::new(),
         |mut acc, (component_type, component_names)| {
-            let mut nodes: Vec<Node> = component_names.iter().map(
-                |name| {
-                    let label = name; // format!("{} {}", get_node_icon(component_type), name);
+            for component_name in component_names {
+                let label = component_name;
+                let connection_set_graph_connection: Option<&GraphConnection> = connections.iter().find(|connection| {
+                    (
+                        (connection.src.1 == *component_name) && (connection.src.0 == *component_type)
+                    ) || (
+                        (connection.dst.1 == *component_name) && (connection.dst.0 == *component_type)
+                    )
+                });
+
+                acc.entry(get_connection_set_name(connection_set_graph_connection, component_type, component_name)).or_insert(vec![]).push(
                     Node::new(
-                        node_id(component_type, name),
+                        node_id(component_type, component_name),
                         vec![attr!("label", label), attr!("style", "filled"), get_node_shape(component_type)]
                     )
-                }
-            ).collect();
-            acc.append(&mut nodes);
+                );
+            }
             acc
         }
     );
 
-    let mut stmts: Vec<Stmt> = graph_components.into_iter().map(|gc| Stmt::Node(gc)).collect();
+    let mut stmts: Vec<Stmt> = graph_components.into_iter().map(|(connection_set, nodes)| {
+        let mut stmts = vec![Stmt::Attribute(attr!("label", connection_set))];
+        let mut stmts_to_add: Vec<Stmt> = nodes.into_iter().map(|gc| Stmt::Node(gc)).collect();
+        stmts.append(&mut stmts_to_add);
+        Stmt::Subgraph(Subgraph {
+            id: id!(format!("cluster_nodes_{}", connection_set)),
+            stmts
+        })
+    }).collect();
 
     let mut edgs: Vec<Stmt> = connections.iter().map(|gc| {
         let lbl = format!("{:?}", gc.via);

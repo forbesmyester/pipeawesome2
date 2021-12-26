@@ -403,19 +403,19 @@ struct CreateSpec {
 
 fn get_create_spec(connection: Connection) -> CreateSpec {
     match connection {
-        Connection::MiddleConnection { component_type, component_name, input_port, output_port } => CreateSpec {
+        Connection::MiddleConnection { component_type, component_name, input_port, output_port, .. } => CreateSpec {
             component_type,
             component_name,
             input_port: Some(input_port),
             output_port: Some(output_port),
         },
-        Connection::StartConnection { component_type, component_name, output_port } => CreateSpec {
+        Connection::StartConnection { component_type, component_name, output_port, .. } => CreateSpec {
             component_type,
             component_name,
             input_port: None,
             output_port: Some(output_port),
         },
-        Connection::EndConnection { component_type, component_name, input_port  } => CreateSpec {
+        Connection::EndConnection { component_type, component_name, input_port, .. } => CreateSpec {
             component_type,
             component_name,
             input_port: Some(input_port),

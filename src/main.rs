@@ -1,3 +1,4 @@
+use pipeawesome2::config::quick_add_connection_set;
 use pipeawesome2::waiter::Waiter;
 use pipeawesome2::waiter::WaiterError;
 use pipeawesome2::config::ComponentType;
@@ -610,17 +611,20 @@ fn main() {
             }
         },
         Ok(UserResponse::Graph(graph_config)) => {
-            let (config, mode) = graph_config;
-            let connections = config.connection.values().fold(
+            let (mut config, mode) = graph_config;
+            for (connection_set, connections) in config.connection.iter_mut() {
+                quick_add_connection_set(connection_set, connections);
+            }
+            let connections = config.connection.iter().fold(
                 vec![],
-                |acc, deser_conn| {
+                |acc, (_connection_set, deser_conn)| {
                     let conns = Config::quick_deserialized_connection_to_connection(deser_conn);
                     graph::convert_connection_to_graph_connection(acc, conns)
                 }
             );
-            let components = config.connection.values().fold(
+            let components = config.connection.iter().fold(
                 HashMap::new(),
-                |acc, deser_conn| {
+                |acc, (_connection_set, deser_conn)| {
                     let conns = Config::quick_deserialized_connection_to_connection(deser_conn);
                     graph::convert_connection_components_fold(acc, conns)
                 }
