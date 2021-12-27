@@ -72,8 +72,9 @@ pub fn convert_connection_components_fold<'a>(mut acc: HashMap<&'a ComponentType
 }
 
 pub fn get_graph(subgraph: Vec<Subgraph>) -> String {
-
-    let stmts = subgraph.into_iter().map(|sg| { Stmt::Subgraph(sg) }).collect();
+    let mut stmts: Vec<Stmt> = vec![Stmt::Attribute(attr!("labeljust","l"))];
+    let mut more_stmts = subgraph.into_iter().map(|sg| { Stmt::Subgraph(sg) }).collect();
+    stmts.append(&mut more_stmts);
 
     let graph = Graph::DiGraph {
         id: Id::Plain("g_get_graph".to_string()),
@@ -157,7 +158,8 @@ pub fn get_diagram(components: HashMap<&ComponentType, HashSet<&str>>, connectio
     );
 
     let mut stmts: Vec<Stmt> = graph_components.into_iter().map(|(connection_set, nodes)| {
-        let mut stmts = vec![Stmt::Attribute(attr!("label", connection_set))];
+        let title = format!("\"{}:\"", connection_set);
+        let mut stmts = vec![Stmt::Attribute(attr!("label", title))];
         let mut stmts_to_add: Vec<Stmt> = nodes.into_iter().map(|gc| Stmt::Node(gc)).collect();
         stmts.append(&mut stmts_to_add);
         Stmt::Subgraph(Subgraph {
