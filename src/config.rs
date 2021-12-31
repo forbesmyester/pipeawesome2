@@ -93,6 +93,19 @@ pub enum Connection {
 
 impl Connection {
 
+    fn component_type(&self) -> &ComponentType {
+        match self {
+            Connection::MiddleConnection { component_type, .. } => {
+                component_type
+            },
+            Connection::StartConnection { component_type, .. } => {
+                component_type
+            },
+            Connection::EndConnection { component_type, ..} => {
+                component_type
+            },
+        }
+    }
     fn as_input_breakable(self, breakable: Breakable) -> Self {
         match self {
             Connection::MiddleConnection { component_type, component_name, mut input_port, output_port, connection_set } => {
@@ -192,7 +205,7 @@ impl ToString for ConfigLintWarning {
 
 pub fn quick_add_connection_set(connection_set: &str, ds: &mut DeserializedConnection) {
 
-    fn set_connection_set(connection: Connection, s: String) -> Connection {
+    fn set_connection_set(connection: Connection, s: Option<String>) -> Connection {
         match connection {
             Connection::MiddleConnection { component_type, component_name, input_port, output_port, .. } => {
                 Connection::MiddleConnection {
@@ -200,7 +213,7 @@ pub fn quick_add_connection_set(connection_set: &str, ds: &mut DeserializedConne
                     component_name,
                     input_port,
                     output_port,
-                    connection_set: Some(s),
+                    connection_set: s,
                 }
             },
             Connection::StartConnection { component_type, component_name, output_port, .. } => {
@@ -208,7 +221,7 @@ pub fn quick_add_connection_set(connection_set: &str, ds: &mut DeserializedConne
                     component_type,
                     component_name,
                     output_port,
-                    connection_set: Some(s),
+                    connection_set: s,
                 }
             },
             Connection::EndConnection { component_type, component_name, input_port, ..} => {
@@ -216,7 +229,7 @@ pub fn quick_add_connection_set(connection_set: &str, ds: &mut DeserializedConne
                     component_type,
                     component_name,
                     input_port,
-                    connection_set: Some(s),
+                    connection_set: s,
                 }
             },
         }
@@ -224,7 +237,8 @@ pub fn quick_add_connection_set(connection_set: &str, ds: &mut DeserializedConne
 
     match ds {
         DeserializedConnection::Connections(cs) => {
-            for i in 0..cs.len() {
+            let len = cs.len();
+            for i in 0..len {
                 let mut dst = Connection::StartConnection {
                     component_type: ComponentType::Buffer,
                     component_name: "".to_owned(),
@@ -233,7 +247,11 @@ pub fn quick_add_connection_set(connection_set: &str, ds: &mut DeserializedConne
                 };
                 std::mem::swap(&mut cs[i], &mut dst);
                 // dst = set_connection_set(cs[i], connection_set.to_owned())
-                cs[i] = set_connection_set(dst, connection_set.to_owned());
+                let mut conn_set = Some(connection_set.to_owned());
+                if ((i == 0) || (i == len - 1)) && dst.component_type() == &ComponentType::Junction {
+                    conn_set = None
+                }
+                cs[i] = set_connection_set(dst, conn_set);
             }
         },
         DeserializedConnection::JoinString(_) => {},
@@ -371,22 +389,22 @@ impl Config {
             }
         }
 
-        let registered: HashMap<String, HashSet<String>> = HashMap::<_, _>::from_iter([
-            ("drain".to_string(), config.drain.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // recommended (where to output)
-            ("faucet".to_string(), config.faucet.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // optional (min/max buffered)
+        let registered: HashMap<String, Vec<String>> = HashMap::<_, _>::from_iter([
+            ("drain".to_string(), config.drain.iter().map(|x| x.0.to_string()).collect::<Vec<String>>()), // recommended (where to output)
+            ("faucet".to_string(), config.faucet.iter().map(|x| x.0.to_string()).collect::<Vec<String>>()), // optional (min/max buffered)
             (
                 "faucet[_].monitored_buffers".to_string(),
                 config.faucet.iter().fold(
-                    HashSet::new(),
+                    Vec::new(),
                     |mut acc, kv| {
                         for mb in kv.1.monitored_buffers.iter() {
-                            acc.insert(mb.to_string());
+                            acc.push(mb.to_string());
                         }
                         acc
                     }
                 )
             ), // optional (min/max buffered)
-            ("launch".to_string(), config.launch.iter().map(|x| x.0.to_string()).collect::<HashSet<String>>()), // required (how to launch the programs)
+            ("launch".to_string(), config.launch.iter().map(|x| x.0.to_string()).collect::<Vec<String>>()), // required (how to launch the programs)
         ]);
 
         // Collect the names / types of all components in the flow of data
@@ -428,9 +446,10 @@ impl Config {
             }
         );
 
-        fn exists_with_flow_config(registered: &HashMap<std::string::String, std::collections::HashSet<std::string::String>>, registered_key: &str, component_name: &str) -> bool {
+        fn exists_with_flow_config(registered: &HashMap<String, Vec<String>>, registered_key: &str, component_name: &str) -> bool {
             registered.get(registered_key).and_then(|hs| {
-                if hs.contains(component_name) { return Some(true); }
+                if hs.iter().any(|h| h == component_name) { return Some(true); }
+                // if hs.contains(component_name) { return Some(true); }
                 None
             }).is_none()
         }
@@ -516,9 +535,11 @@ fn config_serde() {
               "connection": {
                 "ynmds": [
                   { "component_type": "faucet", "component_name": "tap", "output_port": "out" },
-                  { "component_type": "launch", "component_name": "command_1", "breakable": "terminate", "priority": 3, "output_port": "out" }
+                  { "component_type": "launch", "component_name": "command_1", "breakable": "terminate", "priority": 3, "output_port": "out" },
+                  { "component_type": "junction", "component_name": "junc", "breakable": "terminate", "priority": 3, "output_port": "out" }
                 ],
                 "ynbhz": [
+                  { "component_type": "junction", "component_name": "junc", "output_port": "out" },
                   { "component_type": "launch", "component_name": "command_2", "breakable": "terminate", "priority": 3, "output_port": "out" },
                   { "component_type": "drain", "component_name": "drain", "priority": 3 }
                 ],
@@ -544,6 +565,7 @@ fn config_serde() {
                         DeserializedConnection::Connections(vec![
                             Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
                             Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
+                            Connection::MiddleConnection { component_type: ComponentType::Junction, component_name: "junc".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
                         ])
                     ),
                     (
@@ -553,6 +575,7 @@ fn config_serde() {
                     (
                         "ynbhz".to_string(),
                         DeserializedConnection::Connections(vec![
+                            Connection::StartConnection { component_type: ComponentType::Junction, component_name: "junc".to_string(), output_port: OutputPort::Out, connection_set: None },
                             Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
                             Connection::EndConnection { component_type: ComponentType::Drain, component_name: "drain".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
                         ])

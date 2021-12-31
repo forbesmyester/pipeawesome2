@@ -1,14 +1,11 @@
 use crate::config::{ ComponentType, Connection };
 use crate::connectable::OutputPort;
 use std::collections::HashMap;
-use std::collections::HashSet;
 
 use graphviz_rust::dot_structures::*;
 use graphviz_rust::dot_generator::*;
 use graphviz_rust::printer::{PrinterContext,DotPrinter};
 
-// pub fn get_graph_components(config: &Config) -> HashMap<ComponentType, HashSet<String>> {
-// }
 
 pub struct GraphConnection<'a> {
     src: (&'a ComponentType, &'a str, &'a Option<String>),
@@ -50,8 +47,7 @@ pub fn convert_connection_to_graph_connection<'a>(mut acc: Vec<GraphConnection<'
 }
 
 
-pub fn convert_connection_components_fold<'a>(mut acc: HashMap<&'a ComponentType, HashSet<&'a str>>, connections: Vec<&'a Connection>) -> HashMap<&'a ComponentType, HashSet<&'a str>> {
-    use std::iter::FromIterator;
+pub fn convert_connection_components_fold<'a>(mut acc: HashMap<&'a ComponentType, Vec<&'a str>>, connections: Vec<&'a Connection>) -> HashMap<&'a ComponentType, Vec<&'a str>> {
 
     for connection in connections {
         let comp: (&ComponentType, &str) = match connection {
@@ -62,9 +58,9 @@ pub fn convert_connection_components_fold<'a>(mut acc: HashMap<&'a ComponentType
 
         acc.entry(comp.0)
             .and_modify(|x| {
-                x.insert(comp.1);
+                x.push(comp.1);
             })
-            .or_insert(HashSet::<&str>::from_iter([comp.1]));
+            .or_insert(vec![comp.1]);
     }
 
 
@@ -87,7 +83,7 @@ pub fn get_graph(subgraph: Vec<Subgraph>) -> String {
 }
 
 
-pub fn get_diagram(components: HashMap<&ComponentType, HashSet<&str>>, connections: Vec<GraphConnection>) -> Subgraph {
+pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: Vec<GraphConnection>) -> Subgraph {
 
     fn component_type_to_letter(ct: &ComponentType) -> &str {
         match ct {
@@ -157,19 +153,27 @@ pub fn get_diagram(components: HashMap<&ComponentType, HashSet<&str>>, connectio
         }
     );
 
-    let mut stmts: Vec<Stmt> = graph_components.into_iter().map(|(connection_set, nodes)| {
+    let mut stmts: Vec<Stmt> = graph_components.into_iter().fold(vec![], |mut acc, (connection_set, nodes)| {
         let title = format!("\"{}:\"", connection_set);
         let mut stmts = vec![Stmt::Attribute(attr!("label", title))];
         let mut stmts_to_add: Vec<Stmt> = nodes.into_iter().map(|gc| Stmt::Node(gc)).collect();
+        if connection_set == "" {
+            acc.append(&mut stmts_to_add);
+            return acc
+        }
         stmts.append(&mut stmts_to_add);
-        Stmt::Subgraph(Subgraph {
+        acc.push(Stmt::Subgraph(Subgraph {
             id: id!(format!("cluster_nodes_{}", connection_set)),
             stmts
-        })
-    }).collect();
+        }));
+        acc
+    });
 
     let mut edgs: Vec<Stmt> = connections.iter().map(|gc| {
-        let lbl = format!("{:?}", gc.via);
+        let mut lbl = format!("{:?}", gc.via);
+        if gc.via == &OutputPort::Out {
+            lbl = "\"\"".to_string()
+        }
         Stmt::Edge(Edge {
             ty: EdgeTy::Pair(Vertex::N(node_id(&gc.src.0, &gc.src.1)), Vertex::N(node_id(&gc.dst.0, &gc.dst.1))),
             attributes: vec![attr!("label", lbl)]
