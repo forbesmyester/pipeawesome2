@@ -21,13 +21,376 @@ UNIX pipes are wonderful as when you write software using them they have:
 
 ## So what does this project add?
 
-So we write a UNIX pipeline like `cat myfile | grep something | awk 'PAT { do something }' | sort | do-something-with-output` and this is powerful and wonderful.
+So we write a UNIX pipeline like `cat myfile | awk 'PAT { do something }' | grep '^good' | awk '$1='good' { print /dev/stdout } else { print /dev/stderr }' | sed 's/good/perfect' | sort` and this is powerful and wonderful.
 
-However it might be that you want to send the output of AWK to two places and also capture AWK's STDERR and process it with `sed 's/^/AWK: /'` to make it clear where the errors are coming from. What if you want to re-feed the output or STDERR back into the start of the pipeline just before grep...
+This could be visualized like the following:
 
-This is tricky to do, but it's where pipeawesome2 comes in giving you a reasonably easy to read configuration file to describe complex pipelines.
+```unixpipe diagram-dot svg
+digraph {
+    # rankdir = LR;
+    cat -> awk -> grep2 -> awk2 -> sed -> sort
 
-## An actually implemented example (if so basic as to be pointless)
+    cat [label="cat myfile", shape="box"]
+    grep2 [label="grep '^good'", shape="box"]
+    awk [label="awk 'PAT { do something }'", shape="box"]
+    sort [shape="box"]
+    sed [label="sed 's/good/perfect/'", shape="box"]
+    awk2 [label="awk '\l$1='good' {\l    print /dev/stdout; next\l}{\l    print /dev/stderr\l}'\l", shape="box"]
+}
+```
+
+However it might be that you want to:
+
+```unixpipe diagram-dot svg
+digraph {
+    # rankdir = LR;
+    cat -> awk -> grep1 -> do -> awk2 -> sed -> sort
+    awk -> grep2 -> awk2
+    awk2 -> awk [label="STDERR"]
+
+    cat [label="cat myfile", shape="box"]
+    grep2 [label="grep '^good'", shape="box"]
+    awk [label="awk 'PAT { do something }'", shape="box"]
+    sort [shape="box"]
+    sed [label="sed 's/good/perfect/'", shape="box"]
+    awk2 [label="awk '\l$1='good' {\l    print /dev/stdout; next\l}{\l    print /dev/stderr\l}'\l", shape="box"]
+    grep1 [label="grep '^bad'", shape="box"]
+    do [label="do 'further processing'", shape="box"]
+}
+```
+
+Some or all of this is possible to do with tools like `mkfifo`, depending on your skill level, but you certainly won't end up with something that is anywhere near as easy for someone to follow as the simple UNIX command we initially wrote out.
+
+## An example project
+
+I decided to make a tic-tac-toe game to demonstrate the capabilities of this project.
+
+This game would have:
+
+ * A data format which can be translated into **a human recognizable tic-tac-toe grid** with squares filled in.
+ * Two **computer players**.
+ * They would **take turns to pick a blank square** and fill it with their "X" or "O".
+ * A **referee** to decide when the game had been won or was a draw.
+
+### Data Format
+
+I first decided on a data format which looks like the following:
+
+STATUS **:** SQUARE_1 **:** SQUARE_2 **:** SQUARE_3 **:** SQUARE_4$ **:** SQUARE_5 **:** SQUARE_6 **:** SQUARE_7 **:** SQUARE_8 **:** SQUARE_9
+
+In this `STATUS` would be either `X`, `O` for player turns or *something else* to denote game draws / wins.
+
+### Drawing the grid
+
+I next coded up something which would show the grid. I coded a lot of this in GNU AWK because it's something that I'm learning off-and-on and (very) simple `STDIN | STDOUT` coding seems ideally suited to the language.
+
+I came up with the following code:
+
+```awk file=./examples/tic-tac-toe/draw.awk
+```
+
+You can execute this code with `echo 'X:::X::O' | gawk -F ':' -f ./examples/tic-tac-toe/draw.awk` and it'll draw you the following grid:
+
+```unixpipe echo 'O:::X::O::::X' | gawk -F ':' -f ./examples/tic-tac-toe/draw.awk | wrap-as-lang text
+```
+
+I then wrote a Pipeawesome configuration file:
+
+```yaml file=./examples/tic-tac-toe/draw.pa.yaml
+```
+
+You could execute this Pipeawesome configuration file with `echo 'O:::X::O::::X' | ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/draw.pa.yaml`
+
+This is of course, a simple, even pointless example, but it allows me to explain the Pipeawesome file format without having you, the reader, have to consider too much complexity.
+
+Lets break it down into it's constituent parts:
+
+#### connection
+
+```yaml
+connection:
+  initial_word: "faucet:input | launch:draw | drain:output"
+```
+
+In this there are pipes, which connect different types of components. The components types here are `faucet`, `launch` and `drain` with the names of those components being `input`, `draw` and `output`.
+
+The names are just names, but they may need to be referenced elsewhere depending on the component type.
+
+Component types can be:
+
+ * **Faucet**: A source of input.
+ * **Launch**: A running program.
+ * **Drain**: A destination were final data will be sent to.
+ * **Buffer**: A buffer can be used to regulate data flow
+ * **Junction**: A many to many connector which can manage priorities of incoming data.
+
+The pipes can be extended to configure how to handle broken pipes (when a recieving program exits before a sending program) and you can also control whether they're sending STDIN, STDOUT or EXIT statuses.
+
+#### Component: Faucet
+
+```unixpipe diagram-dot svg
+digraph G {
+    rankdir=LR
+    labeljust=l
+    fontsize=20
+
+    subgraph faucet {
+        color=lightgrey;
+        subgraph cluster_faucet {
+            label="Faucet"
+            faucet_pull [label="pull: file/stdin"]
+            faucet_push [label=push]
+            style="rounded"
+        }
+        fauct_exit_pull [shape=plaintext, label=""]
+        faucet_pull -> faucet_push
+        faucet_push -> fauct_exit_pull [style=dashed]
+    }
+}
+```
+
+```yaml
+faucet:
+  input:
+    source: '-'
+```
+
+The Faucet configuration here is for the one named `input`. It has a property called `source` which can be `-` for STDIN or a filename which will be read from.
+
+#### Component: Launch
+
+```unixpipe diagram-dot svg
+digraph G {
+    rankdir=LR
+    labeljust=l
+    fontsize=20
+    
+    subgraph launch {
+        color=lightgrey;
+        subgraph cluster_launch {
+            label="Launch"
+            launch_pull [label=pull]
+            launch_stdin_recv_push [label=push]
+            
+            subgraph cluster_spawn_holder {
+                color=white
+                label=""
+                subgraph cluster_launch_spawn {
+                    color=grey
+                    label="child.spawn"
+                    launch_stdin_recv_pull [label="pull:stdin"]
+                    launch_stdout_send_pull [label="pull:stdout"]
+                    launch_stderr_send_pull [label="pull:stdout"]
+                    style="filled"
+                }
+                launch_exit_send_push [label="push:exit"]
+            }
+            launch_stderr_recv_push [label="push"]
+            launch_stdout_recv_push [label="push"]
+            style="rounded"
+        }
+        launch_input [shape=plaintext, label=""]
+        launch_input -> launch_pull [style="dashed"]
+        launch_pull -> launch_stdin_recv_push
+        launch_stdin_recv_push -> launch_stdin_recv_pull [style=dashed]
+        launch_stdin_recv_pull -> launch_stdout_send_pull [style=dotted, arrowhead=none]
+        launch_stdin_recv_pull -> launch_stderr_send_pull [style=dotted, arrowhead=none]
+        
+        launch_stdout_send_pull -> launch_stdout_recv_push
+        launch_stderr_send_pull -> launch_stderr_recv_push
+        launch_stdout_recv_push -> launch_stdout_outer [style=dashed]
+        launch_stderr_recv_push -> launch_stderr_outer [style=dashed]
+        launch_exit_send_push -> launch_exit_outer [style=dashed]
+        subgraph cluster_launch_outputs {
+            color=white
+            launch_stderr_outer [shape=plaintext, label=""]
+            launch_stdout_outer [shape=plaintext, label=""]
+            launch_exit_outer [shape=plaintext, label=""]
+        }
+    }
+
+}
+```
+
+```yaml
+launch:
+  draw:
+    cmd: "awk"
+    arg:
+      - '-F'
+      - ':'
+      - '-f'
+      - 'examples/tic-tac-toe/draw.awk'
+```
+
+This controls how a program is executed. Further configuration enables the configuration of environmental variables (`env`) and path (`path`).
+
+
+#### Component: Drain
+
+```unixpipe diagram-dot svg
+digraph G {
+    rankdir=LR
+    labeljust=l
+    fontsize=20
+    
+    subgraph drain {
+        color=lightgrey;
+        drain_input [shape=plaintext, label=""]
+        drain_input -> drain_pull [style="dashed"]
+        subgraph cluster_drain {
+            label = "Drain"
+            drain_pull [label=pull]
+            drain_push [label="push: file/stdout"]
+            style="rounded"
+        }
+        drain_pull -> drain_push
+    }
+}
+```
+
+```yaml
+drain:
+  output:
+    destination: '-'
+```
+
+Similar to Faucet, output can be sent to `-` for STDOUT, `_` for STDERR, anything else is taken as a filename where data will be wrote to.
+
+## Having a Go
+
+The following configuration includes all the code actual code, but the configuration adds nothing you haven't seen so far
+
+```yaml file=./examples/tic-tac-toe/have_a_go.pa.yaml
+```
+
+It can be executed with `echo 'O:::X::O::::X' | ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/have_a_go.pa.yaml`
+
+The output from this will be the same as previous but with an extra `O` on the grid: 
+
+```unixpipe echo 'O:::X::O::::X' | ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/have_a_go.pa.yaml | wrap-as-lang text
+```
+
+## Picking a random player to start the game
+
+#### Code for generating the random player
+I figured out that `echo $((RANDOM % 2))::::::::: | sed "s/1/X/" | sed "s/0/O/"` is a single line BASH snippet for selecting a random first player. Putting this into the configuration file would give me:
+
+```yaml
+launch:
+  random_player:
+    command: "bash"
+    arg:
+      - '-c'
+      - 'echo $((RANDOM % 2))::::::::: | sed "s/1/X/" | sed "s/0/O/"'
+```
+
+But this still means I have to let that player take a turn. This means that I'm going to have to explain how to use Pipeawesome branches.
+
+There are basically two ways to do branching, one is to use a **Launch** STDIN and STDOUT to do the actual splitting and the other is to use a **Junction** with `grep` running on either branch. If you wish to join the branches back together you must use a **Junction**.
+
+#### Component: Junction
+
+(a brief interlude)
+
+```unixpipe diagram-dot svg
+digraph G {
+    rankdir=LR
+    labeljust=l
+    fontsize=20
+    
+    subgraph junction {
+        color=lightgrey;
+        subgraph cluster_junction {
+            label = "Junction"
+            junction_push_1 [label=push]
+            junction_push_2 [label=push]
+            junction_pull_1 [label=pull]
+            junction_pull_2 [label=pull]
+            style="rounded"
+        }
+        junction_input_outer_1 [shape="plaintext", label=""]
+        junction_input_outer_2 [shape="plaintext", label=""]
+        junction_input_outer_1 -> junction_pull_1 [style=dashed]
+        junction_input_outer_2 -> junction_pull_2 [style=dashed]
+        junction_pull_1 -> junction_push_1
+        junction_pull_2 -> junction_push_1
+        junction_pull_1 -> junction_push_2
+        junction_pull_2 -> junction_push_2
+        junction_exit_pull_1 [shape=plaintext, label=""]
+        junction_exit_pull_2 [shape=plaintext, label=""]
+        junction_push_1 -> junction_exit_pull_1 [style=dashed]
+        junction_push_2 -> junction_exit_pull_2 [style=dashed]
+    }
+}
+```
+
+A **Junction** is a prioritized many-to-many connector. Anything that comes into one of it's inputs will be sent to all of it's outputs. There's no configuration for **Junction**, but you can add a priority to it's inputs when you connect them, this is done by using `launch:something | [5]junction:many_to_many` where 5 is the priority, if it is not specified the priority is 0 (negative priorities are allowed).
+
+NOTE: A single message between a windows or unix line ending (\r\n or \n) and includes the line ending itself at the end.
+
+
+#### Implementation
+
+Adding the Junctions is easy:
+
+##### Diagram
+
+```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/random_player.pa.yaml -d | diagram-dot svg
+```
+
+##### Legend
+
+```unixpipe diagram-dot svg
+strict digraph g_get_graph {
+    labeljust=l
+    subgraph legend {
+        color=black
+        subgraph cluster_legend_launch {
+            label=launch
+            legend_launch[label="",shape=box,width=0.3,style=filled,height=0.3]
+        }
+        subgraph cluster_legend_buffer {
+            label=buffer
+            legend_buffer[label="",shape=invhouse,width=0.3,style=filled,height=0.3]
+        }
+        subgraph cluster_legend_junction {
+            label=junction
+            legend_junction[label="",shape=oval,width=0.3,style=filled,height=0.3]
+        }
+        subgraph cluster_legend_faucet {
+            label=faucet
+            legend_faucet[label="",shape=trapezium,width=0.3,style=filled,height=0.3]
+        }
+        subgraph cluster_legend_drain {
+            label=drain
+            legend_drain[label="",shape=invtrapezium,width=0.3,style=filled,height=0.3]
+        }
+    }
+}
+```
+
+In doing this diagram, I cheated, I wrote the configuration file first and then told Pipeawsome to draw the graph (`./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/random_player.pa.yaml`). But writing the configuration was relatively simple, see below:
+
+```yaml file=./examples/tic-tac-toe/random_player.pa.yaml
+```
+
+The changes are:
+
+```yaml
+faucet:
+  input: { source: '/dev/null' }
+```
+
+The Faucet configuration has changed to read input from `/dev/null`. This causes the input close immediately but will feed that empty line into the `random_player` launch.
+
+I did of course add the `random_player` launch as well as `player_o_filter`, `player_x_filter`, `referee` and changed `player` into `player_o` and `player_x`, but the format of Launch should be unsurprising by now.
+
+The big change is that there are now multiple keys / lines within `connection:`. If you look the `random_selection:` connection set writes to `junction:turn` but `junction:turn` is read in both `player_o_branch` and `player_x_branch`, which in turn both write to `junction:referee`. The connection set names are completely arbitrary, though the must be unique, but this is how branching is achieved
+
+## A complete game
+
+
 
 Imagine you own a restaurant and you want to check the temperature of soup as it leaves the kitchen:
 
@@ -37,11 +400,6 @@ digraph {
     rankdir = LR;
     
 }
-```
-
-This could be specified with the configuration file below:
-
-```javascript file=examples/temperature_prope.paspec.json5
 ```
 
 To run this file you do the following:
@@ -94,8 +452,6 @@ digraph {
 }
 ```
 
-```javascript file=examples/soup_back_to_kitchen.paspec.json5
-```
 
 ```bash
 $ ./target/debug/pipeawesome -p "$(cat examples/soup_back_to_kitchen.paspec.json5 | json5)" \
@@ -177,8 +533,6 @@ The configuration file forms a directed graph.  In the end I designed a JSON (gr
 
 For simple, and even at it's most complicated, the configuration looks like the following:
 
-```javascript file=examples/temperature_prope.paspec.json5
-```
 
 In this file format:
 
@@ -207,4 +561,28 @@ I have developed and tested this on Ubuntu 20.04 and have done rudimentary testi
     convert "${TMP_DIR}/diagram.png" "${TMP_DIR}/legend.png" -gravity east -append full_diagram.png
     xdg-open full_diagram.png
     rm -rf "${TMP_DIR}"
+
+```unixpipe diagram-dot svg
+digraph G {
+    rankdir=LR
+    subgraph cluster_legend {
+        label="Legend"
+        a [label=""]
+        b [label=""]
+        c [label=""]
+        d [label=""]
+        e [label=""]
+        f [label=""]
+        g [label=""]
+        h [label=""]
+        a -> b [label=motion]
+        c -> d [label=io, style=dotted, arrowhead=none]
+        e -> f [label="channel synchronous", style=dashed]
+        g -> h [label="channel asynchronous", style=dashed, arrowhead=empty]
+    }
+}
+```
+
+Generate this documentation with: `matts-markdown -m README.src.md > README.md && matts-markdown README.src.md > README.html && refresh-browser firefox`
+
 
