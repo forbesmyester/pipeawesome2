@@ -32,7 +32,14 @@ pub struct ReadSplitControl {
 
 impl ReadSplitControl {
     pub fn new() -> ReadSplitControl {
-        ReadSplitControl { split_at: vec!["\r\n".as_bytes().iter().copied().collect(), "\n".as_bytes().iter().copied().collect()], overflow: vec![] }
+        // TODO: Make the split configurable.
+        ReadSplitControl {
+            split_at: vec![
+                "\r\n".as_bytes().iter().copied().collect(),
+                "\n".as_bytes().iter().copied().collect()
+            ],
+            overflow: vec![]
+        }
     }
 }
 
@@ -262,11 +269,13 @@ fn is_split(buf: &[u8], splits: &[Vec<u8>]) -> Option<usize>
 }
 
 async fn motion_read_buffer(rd: &mut (dyn AsyncRead + Unpin + Send), overflow: &mut ReadSplitControl) -> Result<Vec<u8>, std::io::Error> {
+    let mut start_from = 0;
 
     loop {
 
         // It might already have been read into the buffer
-        for overflow_pos in 0..overflow.overflow.len() {
+        for overflow_pos in start_from..overflow.overflow.len() {
+            start_from = overflow_pos;
             if let Some(split_length) = is_split(overflow.overflow.split_at(overflow_pos).1, &overflow.split_at) {
                 let mut new_overflow = overflow.overflow.split_off(overflow_pos + split_length);
                 std::mem::swap(&mut new_overflow, &mut overflow.overflow);
