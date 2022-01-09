@@ -27,6 +27,7 @@ impl std::fmt::Display for ComponentType {
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct LaunchConfig {
+    #[serde(rename = "cmd")]
     pub command: Option<String>,
     #[serde(default)]
     pub path: Option<String>,
@@ -525,12 +526,13 @@ fn config_serde() {
     assert_eq!(
         serde_json::from_str::<Config>(r#"{
               "faucet": {
-                "tap": { "buffered": [ 500, 1000 ], "monitored_buffers": [ "abc", "def" ], "source": "-" }
+                "tap": { "buffered": [ 500, 1000 ], "monitored_buffers": [ "abc", "def" ], "source": "-" },
+                "faucet": { "buffered": [ 128, 256 ], "monitored_buffers": [ "g", "h" ], "source": "/dev/null" }
               },
               "drain": {},
               "launch": {
-                "command_2": { "command": "cat", "path": "/home/forbesmyester", "env": { "USER": "forbesmyester" }, "arg": [ "-n" ] },
-                "command_1": { "command": "cat", "path": null, "env": {}, "arg": [] }
+                "command_2": { "cmd": "cat", "path": "/home/forbesmyester", "env": { "USER": "forbesmyester" }, "arg": [ "-n" ] },
+                "command_1": { "cmd": "cat", "path": null, "env": {}, "arg": [] }
               },
               "connection": {
                 "ynmds": [
@@ -548,7 +550,10 @@ fn config_serde() {
             }
         "#).unwrap(),
         Config {
-                faucet: HashMap::<_, _>::from_iter([("tap".to_string(), FaucetConfig { source: "-".to_string(), buffered: Some((500, 1000)), monitored_buffers: vec!["abc".to_string(), "def".to_string()] })]),
+                faucet: HashMap::<_, _>::from_iter([
+                    ("tap".to_string(), FaucetConfig { source: "-".to_string(), buffered: Some((500, 1000)), monitored_buffers: vec!["abc".to_string(), "def".to_string()] }),
+                    ("faucet".to_string(), FaucetConfig { source: "/dev/null".to_string(), buffered: Some((128, 256)), monitored_buffers: vec!["g".to_string(), "h".to_string()] })
+                ]),
                 drain: HashMap::new(),
                 launch: HashMap::<_, _>::from_iter([
                     ( "command_1".to_string(), LaunchConfig { command: Some("cat".to_string()), arg: vec![], path: None, env: HashMap::new() } ),
@@ -857,9 +862,9 @@ fn test_lint() {
         "plug": { "destination": "_" }
       },
       "launch": {
-        "filter_adult": { "command": "grep", "path": null, "env": {}, "arg": [ "-v", "^[^ \\]\\{5\\}" ] },
-        "mark_adult": { "command": "sed", "path": null, "env": {}, "arg": [ "s/^/Adult:/" ] },
-        "exit_filter_adult": { "command": "awk", "path": null, "env": {}, "arg": [" { print \"EXIT: filter_adult: \" $0 }"] }
+        "filter_adult": { "cmd": "grep", "path": null, "env": {}, "arg": [ "-v", "^[^ \\]\\{5\\}" ] },
+        "mark_adult": { "cmd": "sed", "path": null, "env": {}, "arg": [ "s/^/Adult:/" ] },
+        "exit_filter_adult": { "cmd": "awk", "path": null, "env": {}, "arg": [" { print \"EXIT: filter_adult: \" $0 }"] }
       },
       "connection": {
         "main": "f:tap | j:split | l:filter_adult | l:mark_adult | j:join | d:hole"
