@@ -656,9 +656,6 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                         "T" => Breakable::Terminate,
                         "C" => Breakable::Consume,
                         "F" => Breakable::Finish,
-                        "TERMINATE" => Breakable::Terminate,
-                        "CONSUME" => Breakable::Consume,
-                        "FINISH" => Breakable::Finish,
                         _ => Breakable::Terminate,
                     }
                 }
@@ -678,22 +675,24 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                     ParserConnection::Pipe(p)
                 }
 
-            // rule pipe() -> ParserConnection
-            //     = " "* p:$(['|'|'~'|'*']) " "* {
-            //         match p {
-            //             "*" => ParserConnection::Pipe(Breakable::Finish),
-            //             "~" => ParserConnection::Pipe(Breakable::Consume),
-            //             _ => ParserConnection::Pipe(Breakable::Terminate),
-            //         }
-            //     }
-
             rule component_middle_full() -> ParserConnection
-                = l:in_port() r:port_preference() i:identifier() o:out_port() {
+                = l:in_port() i:identifier() o:out_port() {
                     ParserConnection::Connection(Connection::MiddleConnection {
                         component_type: i.0,
                         component_name: i.1,
                         input_port: l,
                         output_port: o,
+                        connection_set: None,
+                    })
+                 }
+
+            rule component_middle_default_output() -> ParserConnection
+                = l:in_port() i:identifier() {
+                    ParserConnection::Connection(Connection::MiddleConnection {
+                        component_type: i.0,
+                        component_name: i.1,
+                        input_port: l,
+                        output_port: OutputPort::Out,
                         connection_set: None,
                     })
                  }
@@ -721,7 +720,7 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                 }
 
             rule component_middle() -> ParserConnection
-                = x:( component_middle_full() / component_middle_default_input() / component_middle_quick() ) { x }
+                = x:( component_middle_full() / component_middle_default_input()  / component_middle_default_output() / component_middle_quick() ) { x }
 
             rule component_start_full() -> ParserConnection
                 = i:identifier() o:out_port() {
@@ -747,7 +746,7 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                 = c:component_start_full() / c: component_start_quick() { c }
 
             rule component_end_full()  -> ParserConnection
-                = l:in_port() r:port_preference() i:identifier() {
+                = l:in_port() i:identifier() {
                     ParserConnection::Connection(Connection::EndConnection {
                         component_type: i.0,
                         component_name: i.1,
@@ -840,6 +839,15 @@ fn test_load_connection_from_string() {
         vec![
             Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "faucet".to_string(), output_port: OutputPort::Out, connection_set: None },
             Connection::EndConnection { input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, component_type: ComponentType::Drain, component_name: "drain".to_string(), connection_set: None },
+        ]
+    );
+
+    assert_eq!(
+        load_connection_from_string("f:input | [9]j:in | j:out").unwrap(),
+        vec![
+            Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "input".to_string(), output_port: OutputPort::Out, connection_set: None },
+            Connection::MiddleConnection { input_port: InputPort { breakable: Breakable::Terminate, priority: 9 }, component_type: ComponentType::Junction, component_name: "in".to_string(), output_port: OutputPort::Out, connection_set: None },
+            Connection::EndConnection { input_port: InputPort { breakable: Breakable::Terminate, priority: 0 }, component_type: ComponentType::Junction, component_name: "out".to_string(), connection_set: None },
         ]
     );
 
