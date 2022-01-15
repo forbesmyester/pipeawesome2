@@ -74,6 +74,7 @@ fn get_clap_app() -> App<'static, 'static> {
                 .arg(get_required_arg_with("config", "The config file to read, \"-\" for STDIN. If not specified it will be blank", "FILENAME"))
                 .arg(Arg::with_name("diagram-only").long("diagram-only").short("d").help("Sets whether to only draw the digram"))
                 .arg(Arg::with_name("legend-only").long("legend-only").short("l").help("Sets whether to only draw the legend"))
+                .arg(Arg::with_name("legend-border").long("legend-border").help("Sets whether to only draw a border around the legend"))
                 .arg(config_format())
             )
 
@@ -161,9 +162,9 @@ struct UserConfigOptionBase {
 
 #[derive(Debug)]
 enum GraphMode {
-    LegendOnly,
+    LegendOnly(bool),
     DiagramOnly,
-    Full
+    Full(bool)
 }
 
 #[derive(Debug)]
@@ -327,11 +328,12 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
             (_, ["graph"]) => {
 
                 let legend_only = first_sub_command.map(|fsc| { fsc.occurrences_of("legend-only") }).unwrap_or(0) > 0;
+                let legend_border = first_sub_command.map(|fsc| { fsc.occurrences_of("legend-border") }).unwrap_or(0) > 0;
                 let diagram_only = first_sub_command.map(|fsc| { fsc.occurrences_of("diagram-only") }).unwrap_or(0) > 0;
                 let mode = match (legend_only, diagram_only) {
-                    (true, false) => GraphMode::LegendOnly,
+                    (true, false) => GraphMode::LegendOnly(legend_border),
                     (false, true) => GraphMode::DiagramOnly,
-                    _ => GraphMode::Full
+                    _ => GraphMode::Full(legend_border)
                 };
 
                 Ok(UserRequest::Graph {
@@ -578,6 +580,7 @@ fn waiter_error_to_string(waiter_err: WaiterError, waiter: &Waiter) -> String {
         Some(Journey { src: _, dst, breakable: _ }) => waiter.id_to_component_type_name(dst),
         None => None
     };
+
     let (src, dst) = match (waiter_src, motion_src, motion_dst) {
         (_, Some(motion_src), Some(motion_dst)) => (component_type_name_to_string(&motion_src.0, &motion_src.1), component_type_name_to_string(&motion_dst.0, &motion_dst.1)),
         (_, Some(motion_src), _) => (component_type_name_to_string(&motion_src.0, &motion_src.1), "Unknown Destination".to_string()),
@@ -607,7 +610,10 @@ fn main() {
                         })
                         .map(|_processed_count| "".to_string())
                 }
-                Err(x) => Err(vec![x]),
+                Err(x) => {
+                    println!("HERE");
+                    Err(vec![x])
+                }
             }
         },
         Ok(UserResponse::Graph(graph_config)) => {
@@ -630,14 +636,14 @@ fn main() {
                 }
             );
             let to_draw = match mode {
-                GraphMode::Full => {
-                    vec![graph::get_legend(), graph::get_diagram(components, connections)]
+                GraphMode::Full(legend_border) => {
+                    vec![graph::get_legend(legend_border), graph::get_diagram(components, connections)]
                 }
                 GraphMode::DiagramOnly => {
                     vec![graph::get_diagram(components, connections)]
                 }
-                GraphMode::LegendOnly => {
-                    vec![graph::get_legend()]
+                GraphMode::LegendOnly(legend_border) => {
+                    vec![graph::get_legend(legend_border)]
                 }
             };
             Ok(graph::get_graph(to_draw))
