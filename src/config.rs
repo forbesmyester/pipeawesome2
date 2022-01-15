@@ -521,8 +521,6 @@ fn config_serde() {
         Connection::EndConnection { component_type: ComponentType::Drain, component_name: "x".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 5 }, connection_set: None }
     );
 
-    // pa --faucet-src=- --drain-dst=- --faucet-min-max tap100,1000 --launch-command command_1=cat --launch-command command_2=cat --launch-env command_2=USER=forbesmyester --launch-arg command_2=-n --launch-path command_2=/home/forbesmyester --connection 0='command1[S] | tap'
-
     assert_eq!(
         serde_json::from_str::<Config>(r#"{
               "faucet": {
@@ -653,7 +651,7 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                 }
 
             rule pipe_type_code() -> Breakable
-                = p:$("T" / "C" / "F" / "TERMINATE" / "CONSUME" / "FINISH") {
+                = p:$("T" / "C" / "F") {
                     match p {
                         "T" => Breakable::Terminate,
                         "C" => Breakable::Consume,
