@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use crate::config::{ ComponentType, Connection };
 use crate::connectable::OutputPort;
 use std::collections::HashMap;
@@ -5,6 +6,12 @@ use std::collections::HashMap;
 use graphviz_rust::dot_structures::*;
 use graphviz_rust::dot_generator::*;
 use graphviz_rust::printer::{PrinterContext,DotPrinter};
+
+const BUFFER_COLOR: &str = "lightgray";
+const DRAIN_COLOR: &str = "lightpink";
+const FAUCET_COLOR: &str = "darkseagreen1";
+const JUNCTION_COLOR: &str = "papayawhip";
+const LAUNCH_COLOR: &str = "lightblue";
 
 
 pub struct GraphConnection<'a> {
@@ -68,7 +75,7 @@ pub fn convert_connection_components_fold<'a>(mut acc: HashMap<&'a ComponentType
 }
 
 pub fn get_graph(subgraph: Vec<Subgraph>) -> String {
-    let mut stmts: Vec<Stmt> = vec![Stmt::Attribute(attr!("labeljust","l"))];
+    let mut stmts: Vec<Stmt> = vec![Stmt::Attribute(attr!("labeljust","l")),Stmt::Attribute(attr!("newrank","true"))];
     let mut more_stmts = subgraph.into_iter().map(|sg| { Stmt::Subgraph(sg) }).collect();
     stmts.append(&mut more_stmts);
 
@@ -100,8 +107,18 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
             ComponentType::Faucet => attr!("shape","trapezium"),
             ComponentType::Drain => attr!("shape","invtrapezium"),
             ComponentType::Junction => attr!("shape","oval"),
-            ComponentType::Buffer => attr!("shape","invhouse"),
+            ComponentType::Buffer => attr!("shape","doubleoctagon"),
             ComponentType::Launch => attr!("shape","box"),
+        }
+    }
+
+    fn get_node_color(component_type: &ComponentType) -> Attribute {
+        match component_type {
+            ComponentType::Faucet => attr!("fillcolor",FAUCET_COLOR),
+            ComponentType::Drain => attr!("fillcolor",DRAIN_COLOR),
+            ComponentType::Junction => attr!("fillcolor",JUNCTION_COLOR),
+            ComponentType::Buffer => attr!("fillcolor",BUFFER_COLOR),
+            ComponentType::Launch => attr!("fillcolor",LAUNCH_COLOR),
         }
     }
 
@@ -129,6 +146,23 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
         "".to_string()
     }
 
+    let (connection_set_with_faucet, connection_set_with_drain) = connections.iter().fold(
+        (HashSet::new(), HashSet::new()),
+        |(mut acc_faucet, mut acc_drain), connection| {
+            match connection {
+                GraphConnection { src: (ComponentType::Faucet, _, Some(connection_set)), .. } => {
+                    acc_faucet.insert(connection_set.clone());
+                    (acc_faucet, acc_drain)
+                },
+                GraphConnection { dst: (ComponentType::Drain, _, Some(connection_set)), .. } => {
+                    acc_drain.insert(connection_set.clone());
+                    (acc_faucet, acc_drain)
+                },
+                _ => (acc_faucet, acc_drain)
+            }
+        }
+    );
+
     let graph_components: HashMap<String, Vec<Node>> = components.iter().fold(
         HashMap::new(),
         |mut acc, (component_type, component_names)| {
@@ -145,7 +179,7 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
                 acc.entry(get_connection_set_name(connection_set_graph_connection, component_type, component_name)).or_insert(vec![]).push(
                     Node::new(
                         node_id(component_type, component_name),
-                        vec![attr!("label", label), attr!("style", "filled"), get_node_shape(component_type)]
+                        vec![attr!("label", label), attr!("style", "filled"), get_node_shape(component_type), get_node_color(component_type)]
                     )
                 );
             }
@@ -153,23 +187,65 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
         }
     );
 
-    let mut stmts: Vec<Stmt> = graph_components.into_iter().fold(vec![], |mut acc, (connection_set, nodes)| {
+    struct FrontAndBack<T> {
+        front: Vec<T>,
+        middle: Vec<T>,
+        back: Vec<T>,
+    }
+
+    impl<T> FrontAndBack<T> {
+        fn append(&mut self, mut a: Vec<T>) {
+            self.middle.append(&mut a);
+        }
+        fn push_back(&mut self, a: T) {
+            self.back.push(a);
+        }
+        fn push_front(&mut self, a: T) {
+            self.front.push(a);
+        }
+        fn push_middle(&mut self, a: T) {
+            self.middle.push(a);
+        }
+        fn ret(&mut self) -> Vec<T> {
+            let mut v = vec![];
+            std::mem::swap(&mut v, &mut self.front);
+            v.append(&mut self.middle);
+            v.append(&mut self.back);
+            v
+        }
+        fn new() -> FrontAndBack<T> {
+            FrontAndBack { front: vec![], middle: vec![], back: vec![] }
+        }
+    }
+
+    // TODO: Use three Vec, faucet, everything else, drain.
+    let mut stmts: Vec<Stmt> = graph_components.into_iter().fold(FrontAndBack::new(), |mut acc, (connection_set, nodes)| {
         let title = format!("\"{}:\"", connection_set);
-        let mut stmts = vec![Stmt::Attribute(attr!("label", title))];
-        let mut stmts_to_add: Vec<Stmt> = nodes.into_iter().map(|gc| Stmt::Node(gc)).collect();
+        let rank = if connection_set_with_faucet.contains(&connection_set) { "min" }
+            else if connection_set_with_drain.contains(&connection_set) { "max" }
+            else { "same" };
+        let mut stmts = vec![Stmt::Attribute(attr!("label", title)),Stmt::Attribute(attr!("rank", rank))];
+        let stmts_to_add: Vec<Stmt> = nodes.into_iter().map(|gc| Stmt::Node(gc)).collect();
         if connection_set == "" {
-            acc.append(&mut stmts_to_add);
+            acc.append(stmts_to_add);
             return acc
         }
-        stmts.append(&mut stmts_to_add);
-        acc.push(Stmt::Subgraph(Subgraph {
+        stmts.append(&mut stmts_to_add.into_iter().collect::<Vec<Stmt>>());
+        let subgraph = Stmt::Subgraph(Subgraph {
             id: id!(format!("cluster_nodes_{}", connection_set)),
             stmts
-        }));
+        });
+        if connection_set_with_faucet.contains(&connection_set) {
+            acc.push_front(subgraph);
+        } else if connection_set_with_drain.contains(&connection_set) {
+            acc.push_back(subgraph);
+        } else {
+            acc.push_middle(subgraph);
+        }
         acc
-    });
+    }).ret();
 
-    let mut edgs: Vec<Stmt> = connections.iter().map(|gc| {
+    let mut edgs = connections.iter().map(|gc| {
         let mut lbl = format!("{:?}", gc.via);
         if gc.via == &OutputPort::Out {
             lbl = "\"\"".to_string()
@@ -184,35 +260,36 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
 
     Subgraph {
         id: id!("diagram"),
-        stmts
+        stmts: stmts.into_iter().collect::<Vec<Stmt>>()
     }
 
 }
 
-pub fn get_legend() -> Subgraph {
+pub fn get_legend(draw_border: bool) -> Subgraph {
+    let graph_name = if draw_border { "cluster_legend" } else { "graph_legend" };
     subgraph!(
-        "cluster_legend";
+        graph_name;
         attr!("color","black"),
         attr!("label","Legend"),
         subgraph!(
             "cluster_legend_launch";attr!("label","launch"),
-            node!("legend_launch";attr!("label","\"\""),attr!("shape","box"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+            node!("legend_launch";attr!("fillcolor",LAUNCH_COLOR),attr!("label","\"\""),attr!("shape","box"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
         ),
         subgraph!(
             "cluster_legend_buffer";attr!("label","buffer"),
-            node!("legend_buffer";attr!("label","\"\""),attr!("shape","invhouse"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+            node!("legend_buffer";attr!("fillcolor",BUFFER_COLOR),attr!("label","\"\""),attr!("shape","invhouse"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
         ),
         subgraph!(
             "cluster_legend_junction";attr!("label","junction"),
-            node!("legend_junction";attr!("label","\"\""),attr!("shape","oval"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+            node!("legend_junction";attr!("fillcolor",JUNCTION_COLOR),attr!("label","\"\""),attr!("shape","oval"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
         ),
         subgraph!(
             "cluster_legend_faucet";attr!("label","faucet"),
-            node!("legend_faucet";attr!("label","\"\""),attr!("shape","trapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+            node!("legend_faucet";attr!("fillcolor",FAUCET_COLOR),attr!("label","\"\""),attr!("shape","trapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
         ),
         subgraph!(
             "cluster_legend_drain";attr!("label","drain"),
-            node!("legend_drain";attr!("label","\"\""),attr!("shape","invtrapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+            node!("legend_drain";attr!("fillcolor",DRAIN_COLOR),attr!("label","\"\""),attr!("shape","invtrapezium"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
         )
     )
 }
