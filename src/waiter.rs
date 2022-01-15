@@ -14,6 +14,7 @@ use async_std::{channel::Receiver, prelude::*};
 type LaunchString = Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String>;
 
 
+#[derive(Debug)]
 struct FaucetSettings {
     low_watermark: usize,
     high_watermark: usize,
@@ -21,6 +22,7 @@ struct FaucetSettings {
 }
 
 
+#[derive(Debug)]
 struct FaucetSettingsCapture {
     low_watermark: usize,
     high_watermark: usize,
@@ -189,7 +191,6 @@ impl Waiter {
         self.component_type_name_to_id_reverse.insert(self.id, (component_type, name.clone()));
         let hm = self.component_type_name_to_id.get_mut(&component_type).unwrap();
         let inner_entry = hm.entry(name.clone());
-        // println!("NAME: {} = {}", name, self.id);
         inner_entry.or_insert(self.id);
         self.id = self.id + 1;
         self.id - 1
@@ -235,7 +236,6 @@ impl Waiter {
 
     pub fn join(&mut self, (src_id, output_port) : (usize, OutputPort), (dst_id, input_port) : (usize, InputPort)) -> Result<(), ConnectableError> {
 
-        // println!("{} -> {} = {:?}", src_id, dst_id, input_port.breakable);
         let pull = self.get_src_pull(src_id, dst_id, output_port, input_port.breakable)?;
         let input_priority = input_port.priority;
 
@@ -507,8 +507,29 @@ pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
             let mut dst_input_port = Some(InputPort { priority: 0, breakable: Breakable::Terminate });
             std::mem::swap(&mut create_spec.input_port, &mut dst_input_port);
 
+            fn string_hack(id: &usize, o: Option<&(ComponentType, String)>) -> String {
+                match o {
+                    Some((ct, n)) => format!("{}:{}", ct, n),
+                    None => format!("Unknown Component {}", id)
+                }
+            }
+
             if let Some(dst_input_port) = dst_input_port {
-                waiter.join((src_id, src_output_port), (dst_id, dst_input_port)).map_err(|e| format!("{:?}", e))?;
+                match waiter.join((src_id, src_output_port), (dst_id, dst_input_port)) {
+                    Ok(_) => Ok(()),
+                    Err(ConnectableError::AddInput(src_id, connectable_add_input_error)) => {
+                        Err(format!("AddInput({}, {:?})", string_hack(&src_id, waiter.id_to_component_type_name(&src_id)), connectable_add_input_error))
+                    },
+                    Err(ConnectableError::AddOutput(dst_id, connectable_add_output_error)) => {
+                        Err(format!("AddOutput({}, {:?})", string_hack(&dst_id, waiter.id_to_component_type_name(&dst_id)), connectable_add_output_error))
+                    },
+                    Err(ConnectableError::CouldNotFindSourceComponent(src_id)) => {
+                        Err(format!("ConnectableError::CouldNotFindSourceComponent({})", string_hack(&src_id, waiter.id_to_component_type_name(&src_id))))
+                    },
+                    Err(ConnectableError::CouldNotFindDestinationComponent(dst_id)) => {
+                        Err(format!("ConnectableError::CouldNotFindDestinationComponent({})", string_hack(&dst_id, waiter.id_to_component_type_name(&dst_id))))
+                    },
+                }?;
             } else {
                 panic!("HOW!");
             }
