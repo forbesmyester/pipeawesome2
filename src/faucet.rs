@@ -163,6 +163,7 @@ impl Faucet {
 
 }
 
+#[derive(Debug)]
 pub struct FaucetControl {
     paused: bool,
     control: async_std::channel::Sender<()>,
