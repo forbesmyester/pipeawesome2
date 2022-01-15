@@ -227,14 +227,14 @@ impl <E: IntoIterator<Item = (K, V)>,
 
         if let Some((journey, exit_status_tx)) = &mut self.exit_status {
             loop {
-                let msg = match child.try_status().ok().flatten().map(|es| es.code()) {
+                let msg = match child.status().await.ok().map(|es| es.code()) {
                     Some(Some(exit_status)) => {
                         let str = format!("{:?}", exit_status);
                         let bytes = str.as_bytes();
                         Some(IOData(bytes.split_at(bytes.len()).0.iter().copied().collect()))
                     },
                     Some(None) => {
-                        Some(IOData(vec![]))
+                        Some(IOData("_".as_bytes().to_vec())) // If killed, then no exit status available without using std::os::unix
                     }
                     None => None
                 };
