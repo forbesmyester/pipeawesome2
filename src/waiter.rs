@@ -180,7 +180,7 @@ impl Waiter {
             buffer: HashMap::new(),
             drain: HashMap::new(),
             faucet_settings: HashMap::new(),
-            id: 0,
+            id: 1,
             component_type_name_to_id: hm,
             component_type_name_to_id_reverse: HashMap::new(),
         }
@@ -448,9 +448,17 @@ pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
         match component_type {
             ComponentType::Faucet => {
                 // TODO: Figure out how to get this in...
-                let faucet = Faucet::new(config.faucet.get(&component_name).map(|t| t.source.clone()).unwrap_or("".to_string()));
+                let mut faucet = Faucet::new();
+                let read_location = config.faucet.get(&component_name)
+                    .map(|t| t.source.clone())
+                    .flatten();
+                let mut r = Ok(());
+                println!("Faucet::new({:?})", read_location);
+                if let Some(rl) = read_location {
+                    r = faucet.set_read_location(rl);
+                }
                 w.add_faucet(component_name.to_string(), faucet);
-                Ok(id)
+                r.map_err(|e| format!("{:?}", e)).map(|_x| id)
             },
             ComponentType::Drain => {
                 // TODO: Figure out how to get this in...

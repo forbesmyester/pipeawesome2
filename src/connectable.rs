@@ -40,7 +40,7 @@ pub enum ConnectableAddOutputError {
 pub enum ConnectableAddInputError {
     AlreadyAllocated,
     UnsupportedPriority(isize),
-    UnsupportedForControl
+    UnsupportedForControl,
 }
 
 

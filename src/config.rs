@@ -38,7 +38,12 @@ pub struct LaunchConfig {
 }
 
 
-fn default_faucet_drain_config_source_destination() -> String {
+fn default_faucet_config_source() -> Option<String> {
+    None
+}
+
+
+fn default_drain_config_destination() -> String {
     "-".to_string()
 }
 
@@ -53,14 +58,14 @@ pub struct FaucetConfig {
     pub buffered: Option<(usize, usize)>,
     #[serde(default = "default_faucet_empty_vector")]
     pub monitored_buffers: Vec<String>,
-    #[serde(default = "default_faucet_drain_config_source_destination")]
-    pub source: String,
+    #[serde(default = "default_faucet_config_source")]
+    pub source: Option<String>,
 }
 
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct DrainConfig {
-    #[serde(default = "default_faucet_drain_config_source_destination")]
+    #[serde(default = "default_drain_config_destination")]
     pub destination: String,
 }
 
@@ -277,8 +282,8 @@ impl Config {
 
     pub fn faucet_set_watermark(mut config: Config, faucet_id: String, min: usize, max: usize) -> Config {
         let faucet_config = match min > max {
-            true => FaucetConfig { source: default_faucet_drain_config_source_destination(), buffered: Some((max, min)), monitored_buffers: vec![] },
-            false => FaucetConfig { source: default_faucet_drain_config_source_destination(), buffered: Some((min, max)), monitored_buffers: vec![] },
+            true => FaucetConfig { source: default_faucet_config_source(), buffered: Some((max, min)), monitored_buffers: vec![] },
+            false => FaucetConfig { source: default_faucet_config_source(), buffered: Some((min, max)), monitored_buffers: vec![] },
         };
         config.faucet.entry(faucet_id)
             .and_modify(|x| {
@@ -290,8 +295,8 @@ impl Config {
 
     pub fn faucet_set_source(mut config: Config, faucet_id: String, faucet_source: String) -> Config {
         config.faucet.entry(faucet_id)
-            .and_modify(|x| { x.source = faucet_source.to_string() })
-            .or_insert(FaucetConfig { source: faucet_source, buffered: None, monitored_buffers: vec![] });
+            .and_modify(|x| { x.source = Some(faucet_source.to_string()) })
+            .or_insert(FaucetConfig { source: Some(faucet_source), buffered: None, monitored_buffers: vec![] });
         config
     }
 
@@ -549,8 +554,8 @@ fn config_serde() {
         "#).unwrap(),
         Config {
                 faucet: HashMap::<_, _>::from_iter([
-                    ("tap".to_string(), FaucetConfig { source: "-".to_string(), buffered: Some((500, 1000)), monitored_buffers: vec!["abc".to_string(), "def".to_string()] }),
-                    ("faucet".to_string(), FaucetConfig { source: "/dev/null".to_string(), buffered: Some((128, 256)), monitored_buffers: vec!["g".to_string(), "h".to_string()] })
+                    ("tap".to_string(), FaucetConfig { source: Some("-".to_string()), buffered: Some((500, 1000)), monitored_buffers: vec!["abc".to_string(), "def".to_string()] }),
+                    ("faucet".to_string(), FaucetConfig { source: Some("/dev/null".to_string()), buffered: Some((128, 256)), monitored_buffers: vec!["g".to_string(), "h".to_string()] })
                 ]),
                 drain: HashMap::new(),
                 launch: HashMap::<_, _>::from_iter([

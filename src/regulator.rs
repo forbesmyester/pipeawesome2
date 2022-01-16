@@ -13,28 +13,24 @@ use super::motion::{ MotionResult, MotionNotifications, Pull, Push, motion_close
 use crate::startable_control::StartableControl;
 use async_trait::async_trait;
 
-pub struct Faucet {
+pub struct Regulator {
     started: bool,
     stdout_size: usize,
     stdout: Option<Push>,
     stdin: Option<Pull>,
     control: Option<async_std::channel::Receiver<()>>,
-    pull_journey: Option<PullJourney>,
-    read_location: Option<String>,
 }
 
-impl Faucet {
+impl Regulator {
 
 
-    pub fn new() -> Faucet {
-        Faucet {
+    pub fn new() -> Regulator {
+        Regulator {
             started: false,
             stdout_size: 8,
             stdin: None,
             stdout: None,
             control: None,
-            pull_journey: None,
-            read_location: None,
         }
     }
 
@@ -44,28 +40,20 @@ impl Faucet {
     }
 
 
-    pub fn get_control(&mut self) -> FaucetControl {
-        assert!(self.control.is_none(), "Each faucet can only have one control");
+    pub fn get_control(&mut self) -> RegulatorControl {
+        assert!(self.control.is_none(), "Each regulator can only have one control");
         let (send, recv) = bounded(1);
         self.control = Some(recv);
-        FaucetControl {
+        RegulatorControl {
             paused: false,
             control: send,
         }
     }
 
-    pub fn set_read_location(&mut self, read_location: String) -> std::result::Result<(), ConnectableAddInputError> {
-        if self.stdin.is_some() || self.read_location.is_some() {
-            return Err(ConnectableAddInputError::AlreadyAllocated);
-        }
-        self.read_location = Some(read_location);
-        Ok(())
-    }
-
 }
 
 
-impl Connectable for Faucet {
+impl Connectable for Regulator {
 
     fn add_output(&mut self, port: OutputPort, breakable: Breakable, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
         if port != OutputPort::Out {
@@ -77,7 +65,6 @@ impl Connectable for Faucet {
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
         self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
         let journey = Journey { src: src_id, dst: dst_id, breakable: breakable };
-        self.pull_journey = Some(journey.as_pull_journey());
         Ok(Pull::Receiver(journey.as_pull_journey(), stdout_io_reciever_channel))
     }
 
@@ -85,58 +72,29 @@ impl Connectable for Faucet {
         if unused_priority != 0 {
             return Err(ConnectableAddInputError::UnsupportedPriority(unused_priority));
         }
-        println!("read_location {:?} {:?}", self.read_location, self.stdin);
-        if self.stdin.is_some() || self.read_location.is_some() {
+        if self.stdin.is_some() {
             return Err(ConnectableAddInputError::AlreadyAllocated);
         }
         self.stdin = Some(pull);
         Ok(())
     }
 
-
 }
 
 
 
 #[async_trait]
-impl StartableControl for Faucet {
+impl StartableControl for Regulator {
 
     async fn start(&mut self) -> MotionResult<usize> {
-
-        let i = Instant::now();
-        println!("{:?} Faucet::start({:?})", i, self.read_location);
-        let read_location = std::mem::take(&mut self.read_location);
-        println!("{:?} start1 {:?} {:?} {:?}", i, self.stdin, read_location, self.pull_journey);
-        let pull = match (self.pull_journey, read_location) {
-            (Some(journey), Some(f)) if f == "-" => Some(Pull::Stdin(journey, async_std::io::stdin(), ReadSplitControl::new())),
-            (Some(journey), Some(filename)) => {
-                let file = async_std::fs::File::open(filename).await
-                    .map_err(|e| MotionError::OpenIOError(journey, Instant::now(), e))?;
-                Some(Pull::File(journey, file, ReadSplitControl::new()))
-            },
-            _ => None,
-        };
-
-        println!("{:?} start3 {:?} ", i, pull);
-        if let Some(p) = pull {
-            self.add_input(p, 0).expect("Faucet.start() caused ConnectableAddInputError which is not expected as should have been checked before hand");
-        }
-        println!("{:?} start4 {:?} ", i, self.pull_journey);
-
-        if self.stdin.is_none() {
-            panic!("The faucet with Journey {:?} has nowhere to read from", self.pull_journey);
-        }
-
         self.start_secret().await
-
     }
 
 }
 
-impl Faucet {
+impl Regulator {
 
     async fn start_secret(&mut self) -> MotionResult<usize> {
-
         assert!(!self.started);
 
         self.started = true;
@@ -195,13 +153,13 @@ impl Faucet {
 }
 
 #[derive(Debug)]
-pub struct FaucetControl {
+pub struct RegulatorControl {
     paused: bool,
     control: async_std::channel::Sender<()>,
 }
 
 
-impl FaucetControl {
+impl RegulatorControl {
 
     pub async fn pause(&mut self) -> Result<bool, SendError<()>> {
         if self.paused { return Ok(false); }
@@ -254,7 +212,7 @@ fn do_stuff() {
             }
         }
 
-        async fn write_data_1(input_chan_snd: &mut Sender<IOData>, tapcontrol: &mut FaucetControl) {
+        async fn write_data_1(input_chan_snd: &mut Sender<IOData>, tapcontrol: &mut RegulatorControl) {
             input_chan_snd.send(IOData(vec![65; 8])).await.unwrap();
             input_chan_snd.send(IOData(vec![66; 8])).await.unwrap();
             async_std::task::sleep(Duration::from_millis(100)).await;
@@ -285,14 +243,12 @@ fn do_stuff() {
         let (mut input_chan_snd, input_chan_rcv) = bounded(8);
         let input = Pull::Receiver(PullJourney { src: 0, dst: 0 }, input_chan_rcv);
 
-        let mut tap = Faucet {
+        let mut tap = Regulator {
             started: false,
             stdout_size: 8,
             stdin: Some(input),
             stdout: None,
             control: None,
-            pull_journey: None,
-            read_location: None,
         };
 
         let mut tapcontrol = tap.get_control();
@@ -323,3 +279,4 @@ fn do_stuff() {
     use async_std::task;
     println!("R: {:?}", task::block_on(test_tap_impl()));
 }
+
