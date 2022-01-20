@@ -8,6 +8,7 @@ use graphviz_rust::dot_generator::*;
 use graphviz_rust::printer::{PrinterContext,DotPrinter};
 
 const BUFFER_COLOR: &str = "lightgray";
+const REGULATOR_COLOR: &str = "lightgray";
 const DRAIN_COLOR: &str = "lightpink";
 const FAUCET_COLOR: &str = "darkseagreen1";
 const JUNCTION_COLOR: &str = "papayawhip";
@@ -99,6 +100,7 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
             ComponentType::Faucet => "f",
             ComponentType::Junction => "j",
             ComponentType::Launch => "l",
+            ComponentType::Regulator => "r",
         }
     }
 
@@ -107,8 +109,9 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
             ComponentType::Faucet => attr!("shape","trapezium"),
             ComponentType::Drain => attr!("shape","invtrapezium"),
             ComponentType::Junction => attr!("shape","oval"),
-            ComponentType::Buffer => attr!("shape","doubleoctagon"),
+            ComponentType::Buffer => attr!("shape","invhouse"),
             ComponentType::Launch => attr!("shape","box"),
+            ComponentType::Regulator => attr!("shape","house"),
         }
     }
 
@@ -118,6 +121,7 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
             ComponentType::Drain => attr!("fillcolor",DRAIN_COLOR),
             ComponentType::Junction => attr!("fillcolor",JUNCTION_COLOR),
             ComponentType::Buffer => attr!("fillcolor",BUFFER_COLOR),
+            ComponentType::Regulator => attr!("fillcolor",REGULATOR_COLOR),
             ComponentType::Launch => attr!("fillcolor",LAUNCH_COLOR),
         }
     }
@@ -278,6 +282,10 @@ pub fn get_legend(draw_border: bool) -> Subgraph {
         subgraph!(
             "cluster_legend_buffer";attr!("label","buffer"),
             node!("legend_buffer";attr!("fillcolor",BUFFER_COLOR),attr!("label","\"\""),attr!("shape","invhouse"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
+        ),
+        subgraph!(
+            "cluster_legend_regulator";attr!("label","regulator"),
+            node!("legend_regulator";attr!("fillcolor",REGULATOR_COLOR),attr!("label","\"\""),attr!("shape","house"),attr!("width","0.3"),attr!("style","filled"),attr!("height","0.3"))
         ),
         subgraph!(
             "cluster_legend_junction";attr!("label","junction"),

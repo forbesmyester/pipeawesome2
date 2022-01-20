@@ -1,13 +1,13 @@
 use crate::connectable::Breakable;
 use std::time::Instant;
 use crate::config::{Config, DeserializedConnection};
-use crate::config::FaucetConfig;
+use crate::config::RegulatorConfig;
 use crate::motion::Pull;
 use crate::config::ComponentType;
 use crate::config::Connection;
 use crate::connectable::ConnectableError;
 use crate::connectable::{ Connectable, InputPort, OutputPort };
-use crate::{buffer::{Buffer, BufferSizeMessage}, drain::Drain, faucet::{Faucet, FaucetControl}, junction::Junction, launch::Launch, motion::MotionError, startable_control::StartableControl};
+use crate::{buffer::{Buffer, BufferSizeMessage}, drain::Drain, faucet::Faucet, regulator::{Regulator, RegulatorControl}, junction::Junction, launch::Launch, motion::MotionError, startable_control::StartableControl};
 use std::collections::HashMap;
 use async_std::{channel::Receiver, prelude::*};
 
@@ -23,33 +23,33 @@ struct FaucetSettings {
 
 
 #[derive(Debug)]
-struct FaucetSettingsCapture {
+struct RegulatorSettingsCapture {
     low_watermark: usize,
     high_watermark: usize,
-    faucet_component: FaucetControl,
+    regulator_component: RegulatorControl,
     buffer_size_monitors: Vec<Receiver<BufferSizeMessage>>,
 }
 
 
-async fn manage_taps_from_buffers(mut faucet_settings: FaucetSettingsCapture) -> Result<usize, WaiterError> {
+async fn manage_regulator_from_buffers(mut regulator_settings: RegulatorSettingsCapture) -> Result<usize, WaiterError> {
 
     let mut back_off = crate::back_off::BackOff::new();
 
     #[derive(Debug)]
     struct Bsm { pub buffer_size: usize, pub buffer_monitor: Receiver<BufferSizeMessage>, }
 
-    let mut monitors: Vec<Bsm> = faucet_settings.buffer_size_monitors.into_iter().map(|bm| {
+    let mut monitors: Vec<Bsm> = regulator_settings.buffer_size_monitors.into_iter().map(|bm| {
         Bsm {buffer_size: 0, buffer_monitor: bm }
     }).collect();
 
     #[derive(Debug, PartialEq)]
-    enum FaucetStatus {
+    enum RegulatorStatus {
         Open,
         Closed,
     }
 
     let mut read_count = 0;
-    let mut faucet_status = FaucetStatus::Open;
+    let mut regulator_status = RegulatorStatus::Open;
     loop {
         let mut to_remove = vec![];
         let mut nothing_read = true;
@@ -70,13 +70,13 @@ async fn manage_taps_from_buffers(mut faucet_settings: FaucetSettingsCapture) ->
                 }
             }
         }
-        if faucet_status == FaucetStatus::Open && total >= faucet_settings.high_watermark {
-            faucet_settings.faucet_component.pause().await.map_err(|_| WaiterError::CouldNotPause)?;
-            faucet_status = FaucetStatus::Closed;
+        if regulator_status == RegulatorStatus::Open && total >= regulator_settings.high_watermark {
+            regulator_settings.regulator_component.pause().await.map_err(|_| WaiterError::CouldNotPause)?;
+            regulator_status = RegulatorStatus::Closed;
         }
-        if faucet_status == FaucetStatus::Closed && total <= faucet_settings.low_watermark {
-            faucet_settings.faucet_component.resume().await.map_err(|_| WaiterError::CouldNotResume)?;
-            faucet_status = FaucetStatus::Open;
+        if regulator_status == RegulatorStatus::Closed && total <= regulator_settings.low_watermark {
+            regulator_settings.regulator_component.resume().await.map_err(|_| WaiterError::CouldNotResume)?;
+            regulator_status = RegulatorStatus::Open;
         }
         for tr in to_remove.into_iter().rev() {
             monitors.remove(tr);
@@ -102,7 +102,8 @@ pub struct Waiter {
     junction: HashMap<String, Junction>,
     buffer: HashMap<String, Buffer>,
     drain: HashMap<String, Drain>,
-    faucet_settings: HashMap<String, FaucetSettings>,
+    regulator: HashMap<String, Regulator>,
+    regulator_settings: HashMap<String, FaucetSettings>,
     id: usize,
     component_type_name_to_id: HashMap<ComponentType, HashMap<String, usize>>,
     component_type_name_to_id_reverse: HashMap<usize, (ComponentType, String)>,
@@ -112,7 +113,7 @@ pub struct Waiter {
 #[derive(Debug)]
 pub enum WaiterError {
     CausedByError(ComponentType, String, MotionError),
-    SettingsForMissingFaucet(String),
+    SettingsForMissingRegulator(String),
     SettingsRefersMissingBuffer(String, String),
     CouldNotPause,
     CouldNotResume,
@@ -124,7 +125,7 @@ impl WaiterError {
     pub fn description(&self) -> String {
         match self {
             WaiterError::CausedByError(_, _, m) => format!("{}", m),
-            WaiterError::SettingsForMissingFaucet(s) => format!("There are no settings for Faucet:{}", s),
+            WaiterError::SettingsForMissingRegulator(s) => format!("There are no settings for Faucet:{}", s),
             WaiterError::SettingsRefersMissingBuffer(f, b) => format!("Faucet {} refers to buffer {} which does not exist", f, b),
             WaiterError::CouldNotPause => "CouldNotPause".to_string(),
             WaiterError::CouldNotResume => "CouldNotPause".to_string(),
@@ -170,6 +171,7 @@ impl Waiter {
         let mut hm: HashMap<ComponentType, HashMap<String, usize>> = HashMap::new();
         hm.insert(ComponentType::Buffer, HashMap::new());
         hm.insert(ComponentType::Drain, HashMap::new());
+        hm.insert(ComponentType::Regulator, HashMap::new());
         hm.insert(ComponentType::Faucet, HashMap::new());
         hm.insert(ComponentType::Junction, HashMap::new());
         hm.insert(ComponentType::Launch, HashMap::new());
@@ -179,7 +181,8 @@ impl Waiter {
             junction: HashMap::new(),
             buffer: HashMap::new(),
             drain: HashMap::new(),
-            faucet_settings: HashMap::new(),
+            regulator: HashMap::new(),
+            regulator_settings: HashMap::new(),
             id: 0,
             component_type_name_to_id: hm,
             component_type_name_to_id_reverse: HashMap::new(),
@@ -220,6 +223,9 @@ impl Waiter {
             Some((ComponentType::Drain, component_name,)) => {
                 self.drain.get_mut(component_name).map(|x| x.add_output(output_port, breakable, src_id, dst_id))
             },
+            Some((ComponentType::Regulator, component_name,)) => {
+                self.regulator.get_mut(component_name).map(|x| x.add_output(output_port, breakable, src_id, dst_id))
+            },
             None => None,
         };
 
@@ -255,6 +261,9 @@ impl Waiter {
             Some((ComponentType::Drain, component_name)) => {
                 self.drain.get_mut(component_name).map(|x| x.add_input(pull, input_priority))
             },
+            Some((ComponentType::Regulator, component_name)) => {
+                self.regulator.get_mut(component_name).map(|x| x.add_input(pull, input_priority))
+            },
             None => None,
         };
 
@@ -286,42 +295,46 @@ impl Waiter {
         self.drain.insert(name, d);
     }
 
-    pub fn configure_faucet(&mut self, faucet_name: String, buffer_names: Vec<String>, low_watermark: usize, high_watermark: usize) -> bool {
+    pub fn add_regulator(&mut self, name: String, r: Regulator) {
+        self.regulator.insert(name, r);
+    }
+
+    pub fn configure_regulator(&mut self, regulator_name: String, buffer_names: Vec<String>, low_watermark: usize, high_watermark: usize) -> bool {
         let has_all_buffers = buffer_names.iter().all(
             |f| self.buffer.get(f).is_some()
         );
-        if !has_all_buffers || self.faucet.get(&faucet_name).is_none() {
+        if !has_all_buffers || self.regulator.get(&regulator_name).is_none() {
             return false;
         }
-        self.faucet_settings.insert(
-            faucet_name,
+        self.regulator_settings.insert(
+            regulator_name,
             FaucetSettings { low_watermark, high_watermark, buffer_names }
         );
         true
     }
 
-    fn faucet_settings(&mut self) -> Result<Vec<FaucetSettingsCapture>, WaiterError> {
-        let mut faucet_settings_capture: Vec<FaucetSettingsCapture> = vec![];
+    fn regulator_settings(&mut self) -> Result<Vec<RegulatorSettingsCapture>, WaiterError> {
+        let mut regulator_settings_capture: Vec<RegulatorSettingsCapture> = vec![];
 
-        for (faucet_name, settings) in self.faucet_settings.iter() {
-            let faucet = self.faucet.get_mut(faucet_name).ok_or_else(|| WaiterError::SettingsForMissingFaucet(faucet_name.to_string()))?;
-            let faucet_component = faucet.get_control();
+        for (regulator_name, settings) in self.regulator_settings.iter() {
+            let regulator = self.regulator.get_mut(regulator_name).ok_or_else(|| WaiterError::SettingsForMissingRegulator(regulator_name.to_string()))?;
+            let regulator_component = regulator.get_control();
             let mut buffer_size_monitors = vec![];
             for buffer_name in settings.buffer_names.iter() {
-                let buf = self.buffer.get_mut(buffer_name).ok_or_else(|| WaiterError::SettingsRefersMissingBuffer(faucet_name.to_string(), buffer_name.to_string()))?;
+                let buf = self.buffer.get_mut(buffer_name).ok_or_else(|| WaiterError::SettingsRefersMissingBuffer(regulator_name.to_string(), buffer_name.to_string()))?;
                 buffer_size_monitors.push(buf.add_buffer_size_monitor());
             }
-            faucet_settings_capture.push(
-                FaucetSettingsCapture {
+            regulator_settings_capture.push(
+                RegulatorSettingsCapture {
                     low_watermark: settings.low_watermark,
                     high_watermark: settings.high_watermark,
-                    faucet_component,
+                    regulator_component,
                     buffer_size_monitors
                 }
             );
         }
 
-        Ok(faucet_settings_capture)
+        Ok(regulator_settings_capture)
     }
 
     #[allow(clippy::many_single_char_names)]
@@ -361,18 +374,20 @@ impl Waiter {
             vec![e]
         }
 
-        let managed_taps = join_all(self.faucet_settings().map_err(err_as_vec_err)?.into_iter().map(manage_taps_from_buffers));
+        let managed_regulators = join_all(self.regulator_settings().map_err(err_as_vec_err)?.into_iter().map(manage_regulator_from_buffers));
         let faucets = join_all(self.faucet.iter_mut().map(|(n, f)| start(ComponentType::Faucet, n, f)));
         let launch = join_all(self.launch.iter_mut().map(
             |(n, l)| start_launch(n, l) )
         );
         let junction = join_all(self.junction.iter_mut().map(|(n, j)| start(ComponentType::Junction, n, j)));
+        let regulators = join_all(self.regulator.iter_mut().map(|(n, j)| start(ComponentType::Regulator, n, j)));
         let buffers = join_all(self.buffer.iter_mut().map(|(n, b)| start(ComponentType::Buffer, n, b)));
         let drain = join_all(self.drain.iter_mut().map(|(n, d)| start(ComponentType::Drain, n, d)));
 
-        let (mut l, (mut f, (mut m, (mut d, (mut b, mut j))))) = launch.join(faucets.join(managed_taps.join(drain.join(buffers.join(junction))))).await;
+        let (mut l, (mut r, (mut f, (mut m, (mut d, (mut b, mut j)))))) = launch.join(regulators.join(faucets.join(managed_regulators.join(drain.join(buffers.join(junction)))))).await;
 
         l.append(&mut f);
+        l.append(&mut r);
         l.append(&mut m);
         l.append(&mut d);
         l.append(&mut b);
@@ -455,6 +470,11 @@ pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
             ComponentType::Drain => {
                 // TODO: Figure out how to get this in...
                 w.add_drain(component_name.to_string(), Drain::new(config.drain.get(&component_name).map(|s| s.destination.clone()).unwrap_or("".to_string())));
+                Ok(id)
+            },
+            ComponentType::Regulator => {
+                // TODO: Figure out how to get this in...
+                w.add_regulator(component_name.to_string(), Regulator::new());
                 Ok(id)
             },
             ComponentType::Buffer => {
@@ -541,9 +561,9 @@ pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
         }
     }
 
-    for (faucet_name, FaucetConfig { source: _, monitored_buffers, buffered}) in config.faucet.into_iter() {
+    for (regulator_name, RegulatorConfig { monitored_buffers, buffered}) in config.regulator.into_iter() {
         if let Some(b) = buffered {
-            waiter.configure_faucet(faucet_name, monitored_buffers, b.0, b.1);
+            waiter.configure_regulator(regulator_name, monitored_buffers, b.0, b.1);
         }
     }
 

@@ -15,6 +15,7 @@ pub enum ComponentType {
     Junction,
     Buffer,
     Drain,
+    Regulator,
 }
 
 
@@ -43,18 +44,22 @@ fn default_faucet_drain_config_source_destination() -> String {
 }
 
 
-fn default_faucet_empty_vector() -> Vec<String> {
+fn default_empty_vector() -> Vec<String> {
     vec![]
 }
 
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct FaucetConfig {
-    pub buffered: Option<(usize, usize)>,
-    #[serde(default = "default_faucet_empty_vector")]
-    pub monitored_buffers: Vec<String>,
-    #[serde(default = "default_faucet_drain_config_source_destination")]
     pub source: String,
+}
+
+
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+pub struct RegulatorConfig {
+    pub buffered: Option<(usize, usize)>,
+    #[serde(default = "default_empty_vector")]
+    pub monitored_buffers: Vec<String>,
 }
 
 
@@ -162,6 +167,8 @@ pub struct Config {
     #[serde(default = "HashMap::new")]
     pub faucet: HashMap<String, FaucetConfig>,
     #[serde(default = "HashMap::new")]
+    pub regulator: HashMap<String, RegulatorConfig>,
+    #[serde(default = "HashMap::new")]
     pub drain: HashMap<String, DrainConfig>,
     #[serde(default = "HashMap::new")]
     pub launch: HashMap<String, LaunchConfig>,
@@ -172,6 +179,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, Serialize, Eq, PartialEq, Hash)]
 pub enum ConfigLintWarning {
+    RegulatorWatchingMissingBuffer { config_section: String, component_type: ComponentType, component_name: String },
     InConfigButMissingFlowConnection { config_section: String, component_type: ComponentType, component_name: String },
     InFlowConnectionButMissingConfig { component_type: ComponentType, component_name: String },
     InvalidConnection { id: String, join: String },
@@ -198,6 +206,14 @@ impl ToString for ConfigLintWarning {
             },
             ConfigLintWarning::InvalidConnection { id, join } => {
                 format!("PA: Error: 0003: {}:{} - Could not be converted from the configuration", id, join)
+            },
+            ConfigLintWarning::RegulatorWatchingMissingBuffer { config_section, component_type, component_name } => {
+                format!(
+                    "PA: Error: 0004: {}:{} - Configuration exists in {}, but this is not referenced in the connections",
+                    component_type,
+                    component_name,
+                    config_section
+                )
             },
         }
     }
@@ -275,23 +291,23 @@ impl Config {
         }
     }
 
-    pub fn faucet_set_watermark(mut config: Config, faucet_id: String, min: usize, max: usize) -> Config {
-        let faucet_config = match min > max {
-            true => FaucetConfig { source: default_faucet_drain_config_source_destination(), buffered: Some((max, min)), monitored_buffers: vec![] },
-            false => FaucetConfig { source: default_faucet_drain_config_source_destination(), buffered: Some((min, max)), monitored_buffers: vec![] },
+    pub fn regulator_set_watermark(mut config: Config, regulator_id: String, min: usize, max: usize) -> Config {
+        let reg_config = match min > max {
+            true => RegulatorConfig { buffered: Some((max, min)), monitored_buffers: vec![] },
+            false => RegulatorConfig { buffered: Some((min, max)), monitored_buffers: vec![] },
         };
-        config.faucet.entry(faucet_id)
+        config.regulator.entry(regulator_id)
             .and_modify(|x| {
-                x.buffered = faucet_config.buffered;
+                x.buffered = reg_config.buffered;
             })
-            .or_insert(faucet_config);
+            .or_insert(reg_config);
         config
     }
 
     pub fn faucet_set_source(mut config: Config, faucet_id: String, faucet_source: String) -> Config {
         config.faucet.entry(faucet_id)
             .and_modify(|x| { x.source = faucet_source.to_string() })
-            .or_insert(FaucetConfig { source: faucet_source, buffered: None, monitored_buffers: vec![] });
+            .or_insert(FaucetConfig { source: faucet_source });
         config
     }
 
@@ -384,7 +400,6 @@ impl Config {
             match s {
                 "faucet" => ComponentType::Faucet,
                 "launch" => ComponentType::Launch,
-                "faucet[_].monitored_buffers" => ComponentType::Buffer,
                 "drain" => ComponentType::Drain,
                 _ => panic!("Encountered known reg_key in in Config::lint()"),
             }
@@ -393,20 +408,18 @@ impl Config {
         let registered: HashMap<String, Vec<String>> = HashMap::<_, _>::from_iter([
             ("drain".to_string(), config.drain.iter().map(|x| x.0.to_string()).collect::<Vec<String>>()), // recommended (where to output)
             ("faucet".to_string(), config.faucet.iter().map(|x| x.0.to_string()).collect::<Vec<String>>()), // optional (min/max buffered)
-            (
-                "faucet[_].monitored_buffers".to_string(),
-                config.faucet.iter().fold(
-                    Vec::new(),
-                    |mut acc, kv| {
-                        for mb in kv.1.monitored_buffers.iter() {
-                            acc.push(mb.to_string());
-                        }
-                        acc
-                    }
-                )
-            ), // optional (min/max buffered)
             ("launch".to_string(), config.launch.iter().map(|x| x.0.to_string()).collect::<Vec<String>>()), // required (how to launch the programs)
         ]);
+
+        let regulator_buffers = config.regulator.iter().fold(
+            Vec::new(),
+            |mut acc, kv| {
+                for mb in kv.1.monitored_buffers.iter() {
+                    acc.push((kv.0, mb.to_string()));
+                }
+                acc
+            }
+        );
 
         // Collect the names / types of all components in the flow of data
         let known_components: HashSet<(&ComponentType, &str)> = config.connection.iter()
@@ -424,6 +437,23 @@ impl Config {
                     acc
                 }
             );
+
+        regulator_buffers.iter().fold(
+            &mut errs,
+            |acc, (regulator_name, buffer_name)| {
+                if known_components.contains(&(&ComponentType::Buffer, buffer_name as &str)) {
+                    return acc;
+                }
+                acc.insert(
+                    ConfigLintWarning::RegulatorWatchingMissingBuffer{
+                        component_type: ComponentType::Buffer,
+                        component_name: buffer_name.to_owned(),
+                        config_section: format!("regulator[\"{}\"].monitored_buffers", regulator_name),
+                    }
+                );
+                acc
+            }
+        );
 
         // If something is registered, but does not have a corresponding connection... what do we care?
         registered.iter().fold(
@@ -490,6 +520,7 @@ impl Config {
         Config {
             faucet: HashMap::new(),
             drain: HashMap::new(),
+            regulator: HashMap::new(),
             launch: HashMap::new(),
             connection: HashMap::new(),
         }
@@ -509,6 +540,7 @@ fn config_serde() {
         Config {
             faucet: HashMap::new(),
             drain: HashMap::new(),
+            regulator: HashMap::new(),
             launch: HashMap::new(),
             connection: HashMap::<_, _>::from_iter([
                 ("a".to_string(), DeserializedConnection::JoinString("faucet[O] | [3]drain".to_string()))
@@ -524,8 +556,11 @@ fn config_serde() {
     assert_eq!(
         serde_json::from_str::<Config>(r#"{
               "faucet": {
-                "tap": { "buffered": [ 500, 1000 ], "monitored_buffers": [ "abc", "def" ], "source": "-" },
-                "faucet": { "buffered": [ 128, 256 ], "monitored_buffers": [ "g", "h" ], "source": "/dev/null" }
+                "tap": { "source": "-" },
+                "faucet": { "source": "/dev/null" }
+              },
+              "regulator": {
+                "reg": { "buffered": [ 500, 1000 ], "monitored_buffers": [ "abc", "def" ] }
               },
               "drain": {},
               "launch": {
@@ -549,8 +584,11 @@ fn config_serde() {
         "#).unwrap(),
         Config {
                 faucet: HashMap::<_, _>::from_iter([
-                    ("tap".to_string(), FaucetConfig { source: "-".to_string(), buffered: Some((500, 1000)), monitored_buffers: vec!["abc".to_string(), "def".to_string()] }),
-                    ("faucet".to_string(), FaucetConfig { source: "/dev/null".to_string(), buffered: Some((128, 256)), monitored_buffers: vec!["g".to_string(), "h".to_string()] })
+                    ("tap".to_string(), FaucetConfig { source: "-".to_string() }),
+                    ("faucet".to_string(), FaucetConfig { source: "/dev/null".to_string() })
+                ]),
+                regulator: HashMap::<_, _>::from_iter([
+                    ("reg".to_string(), RegulatorConfig { buffered: Some((500, 1000)), monitored_buffers: vec!["abc".to_string(), "def".to_string()] }),
                 ]),
                 drain: HashMap::new(),
                 launch: HashMap::<_, _>::from_iter([
@@ -592,6 +630,7 @@ fn config_serde() {
         Config {
             faucet: HashMap::new(),
             launch: HashMap::new(),
+            regulator: HashMap::new(),
             connection: HashMap::new(),
             drain: HashMap::new(),
         }
@@ -618,10 +657,11 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                 = "[" p:port_preference() "]" { InputPort { breakable: Breakable::Terminate, priority: p } }
 
             rule component_type() -> ComponentType
-                = t:$("faucet" / "drain" / "junction" / "buffer" / "launch" / "f" / "d" / "j" / "b" / "l") {
+                = t:$("faucet" / "drain" / "junction" / "buffer" / "launch" / "f" / "d" / "r" / "j" / "b" / "l") {
                     match t {
                         "f" => ComponentType::Faucet,
                         "d" => ComponentType::Drain,
+                        "r" => ComponentType::Regulator,
                         "j" => ComponentType::Junction,
                         "b" => ComponentType::Buffer,
                         "l" => ComponentType::Launch,
@@ -863,6 +903,9 @@ fn test_lint() {
       "faucet": {
         "tap": { "source": "res/test/simple_input.txt" }
       },
+      "regulator": {
+        "reg": { "buffered": [10, 100], "monitored_buffers": [ "buff", "zzz" ] }
+      },
       "drain": {
         "hole": { "destination": "-" },
         "plug": { "destination": "_" }
@@ -873,7 +916,7 @@ fn test_lint() {
         "exit_filter_adult": { "cmd": "awk", "path": null, "env": {}, "arg": [" { print \"EXIT: filter_adult: \" $0 }"] }
       },
       "connection": {
-        "main": "f:tap | j:split | l:filter_adult | l:mark_adult | j:join | d:hole"
+        "main": "f:tap | b:buff | j:split | l:filter_adult | l:mark_adult | j:join | d:hole"
       }
     }"#;
 
@@ -882,6 +925,7 @@ fn test_lint() {
         HashSet::<_>::from_iter([
             ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "drain".to_string(), component_type: ComponentType::Drain, component_name: "plug".to_string() },
             ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "launch".to_string(), component_type: ComponentType::Launch, component_name: "exit_filter_adult".to_string() },
+            ConfigLintWarning::RegulatorWatchingMissingBuffer { config_section: "regulator[\"reg\"].monitored_buffers".to_string(), component_type: ComponentType::Buffer, component_name: "zzz".to_string() },
         ]),
         Config::lint(&mut config)
     );

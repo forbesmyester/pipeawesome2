@@ -58,7 +58,7 @@ fn get_clap_app() -> App<'static, 'static> {
             .possible_values(&["yaml", "json"])
     }
 
-    App::new("PipeAwesome")
+    App::new("Pipeawesome")
         .author("Matthew Forrester, githib.com@speechmarks.com")
         .version("0.0.0")
         .about("Like UNIX pipes, but on sterroids")
@@ -97,13 +97,15 @@ fn get_clap_app() -> App<'static, 'static> {
                             SubCommand::with_name("source")
                                 .arg(get_required_index_arg("SOURCE", "SOURCE must be either a filename, \"-\" for STDIN, or empty for NULL input", 1))
                         )
+                )
+
+                .subcommand(
+                    SubCommand::with_name("regulator")
+                        .arg(get_required_arg_with("id", "The ID of the faucet to modify", "ID"))
                         .subcommand(
                             SubCommand::with_name("watermark")
                                 .arg(get_required_index_arg("MIN", "MIN must be an integer", 1))
                                 .arg(get_required_index_arg("MAX", "MAX must be an integer greater than MIN", 2))
-                        )
-                        .subcommand(
-                            SubCommand::with_name("min-max-clear")
                         )
                 )
 
@@ -193,7 +195,7 @@ enum UserRequest {
         base_options: UserConfigOptionBase,
         dst: String,
     },
-    FaucetWatermark {
+    RegulatorWatermark {
         base_options: UserConfigOptionBase,
         min: usize,
         max: usize,
@@ -363,7 +365,7 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
                     .map(|src| UserRequest::FaucetSrc { base_options, src: src.to_string() })
                     .ok_or_else(|| "Command {:?} did not have all required values".to_string())
             },
-            (Ok(base_options), ["config", "faucet", "watermark"]) => {
+            (Ok(base_options), ["config", "regulator", "watermark"]) => {
                 last_sub_command
                     .map(|lsc| {
                         (
@@ -372,7 +374,7 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
                         )
                     })
                     .map(|tup| option_of_tuples_to_option_tuple((tup.0, tup.1))).flatten()
-                    .map(|tup| UserRequest::FaucetWatermark { base_options, min: tup.0, max: tup.1 })
+                    .map(|tup| UserRequest::RegulatorWatermark { base_options, min: tup.0, max: tup.1 })
                     .ok_or_else(|| "Command {:?} did not have all required values".to_string())
             },
             (Ok(base_options), ["config", "launch", "command"]) => {
@@ -510,8 +512,8 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
             read_config(&config_format, &config_in).map(|old_config| Config::drain_set_destination(old_config, id, dst))
                 .map(UserResponse::Config)
         },
-        Ok(UserRequest::FaucetWatermark { base_options: UserConfigOptionBase { id, config_in, config_format, .. }, min, max }) => {
-            read_config(&config_format, &config_in).map(|old_config| Config::faucet_set_watermark(old_config, id, min, max))
+        Ok(UserRequest::RegulatorWatermark { base_options: UserConfigOptionBase { id, config_in, config_format, .. }, min, max }) => {
+            read_config(&config_format, &config_in).map(|old_config| Config::regulator_set_watermark(old_config, id, min, max))
                 .map(UserResponse::Config)
         },
         Ok(UserRequest::LaunchCommand { base_options: UserConfigOptionBase { id, config_in, config_format, .. }, command }) => {
@@ -611,7 +613,6 @@ fn main() {
                         .map(|_processed_count| "".to_string())
                 }
                 Err(x) => {
-                    println!("HERE");
                     Err(vec![x])
                 }
             }

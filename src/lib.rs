@@ -4,6 +4,7 @@ pub mod launch;
 pub mod buffer;
 pub mod junction;
 pub mod faucet;
+pub mod regulator;
 pub mod drain;
 pub mod waiter;
 pub mod utils;
