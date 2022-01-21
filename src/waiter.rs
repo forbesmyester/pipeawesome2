@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::connectable::Breakable;
 use std::time::Instant;
 use crate::config::{Config, DeserializedConnection};
@@ -442,7 +443,7 @@ fn get_create_spec(connection: Connection) -> CreateSpec {
 
 pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
 
-    let mut config_connections: HashMap<String, DeserializedConnection> = HashMap::new();
+    let mut config_connections: BTreeMap<String, DeserializedConnection> = BTreeMap::new();
     std::mem::swap(&mut config.connection, &mut config_connections);
     let all_connections = config_connections.into_iter().fold(
         Vec::new(),

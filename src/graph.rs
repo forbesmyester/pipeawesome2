@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::HashSet;
 use crate::config::{ ComponentType, Connection };
 use crate::connectable::OutputPort;
@@ -167,8 +168,8 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
         }
     );
 
-    let graph_components: HashMap<String, Vec<Node>> = components.iter().fold(
-        HashMap::new(),
+    let graph_components: BTreeMap<String, Vec<Node>> = components.iter().fold(
+        BTreeMap::new(),
         |mut acc, (component_type, component_names)| {
             for component_name in component_names {
                 let label = component_name;
@@ -222,7 +223,6 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
         }
     }
 
-    // TODO: Use three Vec, faucet, everything else, drain.
     let mut stmts: Vec<Stmt> = graph_components.into_iter().fold(FrontAndBack::new(), |mut acc, (connection_set, nodes)| {
         let title = format!("\"{}:\"", connection_set);
         let rank = if connection_set_with_faucet.contains(&connection_set) { "min" }

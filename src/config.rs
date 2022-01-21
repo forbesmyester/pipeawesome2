@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::connectable::InputPort;
 use std::collections::HashSet;
 use std::collections::HashMap;
@@ -172,8 +173,8 @@ pub struct Config {
     pub drain: HashMap<String, DrainConfig>,
     #[serde(default = "HashMap::new")]
     pub launch: HashMap<String, LaunchConfig>,
-    #[serde(default = "HashMap::new")]
-    pub connection: HashMap<String, DeserializedConnection>,
+    #[serde(default = "BTreeMap::new")]
+    pub connection: BTreeMap<String, DeserializedConnection>,
 }
 
 
@@ -362,7 +363,7 @@ impl Config {
 
     }
 
-    pub fn convert_connections(connections: &mut HashMap<String, DeserializedConnection>) -> HashSet<ConfigLintWarning> {
+    pub fn convert_connections(connections: &mut BTreeMap<String, DeserializedConnection>) -> HashSet<ConfigLintWarning> {
 
         connections.iter_mut()
             .filter_map(
@@ -522,7 +523,7 @@ impl Config {
             drain: HashMap::new(),
             regulator: HashMap::new(),
             launch: HashMap::new(),
-            connection: HashMap::new(),
+            connection: BTreeMap::new(),
         }
     }
 
@@ -542,7 +543,7 @@ fn config_serde() {
             drain: HashMap::new(),
             regulator: HashMap::new(),
             launch: HashMap::new(),
-            connection: HashMap::<_, _>::from_iter([
+            connection: BTreeMap::<_, _>::from_iter([
                 ("a".to_string(), DeserializedConnection::JoinString("faucet[O] | [3]drain".to_string()))
             ])
         }
@@ -600,7 +601,7 @@ fn config_serde() {
                         env: HashMap::<_, _>::from_iter([( "USER".to_string(), "forbesmyester".to_string() ) ])
                     } ),
                 ]),
-                connection: HashMap::<_, _>::from_iter([
+                connection: BTreeMap::<_, _>::from_iter([
                     (
                         "ynmds".to_string(),
                         DeserializedConnection::Connections(vec![
@@ -631,7 +632,7 @@ fn config_serde() {
             faucet: HashMap::new(),
             launch: HashMap::new(),
             regulator: HashMap::new(),
-            connection: HashMap::new(),
+            connection: BTreeMap::new(),
             drain: HashMap::new(),
         }
     );
