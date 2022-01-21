@@ -658,7 +658,7 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                 = "[" p:port_preference() "]" { InputPort { breakable: Breakable::Terminate, priority: p } }
 
             rule component_type() -> ComponentType
-                = t:$("faucet" / "drain" / "junction" / "buffer" / "launch" / "f" / "d" / "r" / "j" / "b" / "l") {
+                = t:$("faucet" / "drain" / "regulator" / "junction" / "buffer" / "launch" / "f" / "d" / "r" / "j" / "b" / "l") {
                     match t {
                         "f" => ComponentType::Faucet,
                         "d" => ComponentType::Drain,
@@ -668,6 +668,7 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
                         "l" => ComponentType::Launch,
                         "faucet" => ComponentType::Faucet,
                         "drain" => ComponentType::Drain,
+                        "regulator" => ComponentType::Regulator,
                         "junction" => ComponentType::Junction,
                         "buffer" => ComponentType::Buffer,
                         "launch" => ComponentType::Launch,
