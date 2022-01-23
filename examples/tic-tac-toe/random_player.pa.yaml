@@ -1,0 +1,27 @@
+connection:
+  random_selection: "l:random_player | junction:turn"
+  player_o_branch: "junction:turn | l:player_o_filter | l:player_o | junction:draw"
+  player_x_branch: "junction:turn | l:player_x_filter | l:player_x | junction:draw"
+  last_draw: "junction:draw | l:referee | l:draw | d:output"
+drain:
+  output: { destination: '-' }
+launch:
+  random_player:
+    cmd: "bash"
+    arg: [ '-c', 'echo $((RANDOM % 2))::::::::: | sed "s/1/X/" | sed "s/0/O/"' ]
+  player_o_filter: { cmd: "grep", arg: [ "--line-buffered", "^O" ] }
+  player_o:
+    cmd: "gawk"
+    arg: [ '-F', ':', '-v', 'PLAYER=O', '-f', 'examples/tic-tac-toe/player.awk' ]
+  player_x_filter: { cmd: "grep", arg: [ "--line-buffered", "^X" ] }
+  player_x:
+    cmd: "gawk"
+    arg: [ '-F', ':', '-v', 'PLAYER=X', '-f', 'examples/tic-tac-toe/player.awk' ]
+  referee:
+    cmd: "gawk"
+    arg: ['-F', ':', '-f', './examples/tic-tac-toe/referee.awk', 'NF=10', 'OFS=:']
+  draw:
+    cmd: "gawk"
+    arg: [ '-F', ':', '-f', 'examples/tic-tac-toe/draw.awk' ]
+
+

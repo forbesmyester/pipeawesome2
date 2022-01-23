@@ -1,0 +1,23 @@
+connection:
+  ls_stdout: "l:ls[O] | l:awk_stdout | j:out"
+  ls_stderr: "l:ls[E] | l:awk_stderr | j:out"
+  ls_exit: "l:ls[X] | l:awk_exit | j:out"
+  out: "j:out | d:out"
+drain:
+  out: { destination: '-' }
+launch:
+  awk_stdout:
+    cmd: awk
+    arg: ['{ print "STDOUT: " $0 }']
+  awk_stderr:
+    cmd: awk
+    arg: ['{ print "STDERR: " $0 }']
+  awk_exit:
+    cmd: awk
+    arg: ['{ print "EXIT: " $0 }']
+  ls:
+    cmd: ls
+    arg:
+    - "."
+    - "i_should_not_exist"
+

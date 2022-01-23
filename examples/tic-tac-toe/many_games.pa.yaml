@@ -1,0 +1,45 @@
+connection:
+  random_selection: "l:random_player | regulator:regulate_flow | j:turn"
+  player_o_branch: "j:turn | l:player_o_filter | l:player_o | j:draw"
+  player_x_branch: "j:turn | l:player_x_filter | l:player_x | j:draw"
+  last_draw: "j:draw | l:referee | j:loop | l:only_finishes | l:draw | d:output"
+  looper: "j:loop | l:turn_swapper | buffer:reprocess | j:turn"
+drain:
+  output: { destination: '-' }
+regulator:
+  reg:
+    buffered: [10, 100]
+    monitored_buffers: [ "reprocess" ]
+launch:
+  random_player:
+    cmd: "bash"
+    arg:
+      - '-c'
+      - 'for i in {1..100000}; do echo $((RANDOM % 2))::::::::: | sed "s/1/X/" | sed "s/0/O/"; done '
+  player_o_filter: { cmd: "grep", arg: [ "--line-buffered", "^O" ] }
+  player_o:
+    cmd: "gawk"
+    arg: [ '-F', ':', '-v', 'PLAYER=O', '-f', 'examples/tic-tac-toe/player.awk' ]
+  player_x_filter: { cmd: "grep", arg: [ "--line-buffered", "^X" ] }
+  player_x:
+    cmd: "gawk"
+    arg: [ '-F', ':', '-v', 'PLAYER=X', '-f', 'examples/tic-tac-toe/player.awk' ]
+  referee:
+    cmd: "gawk"
+    arg: ['-F', ':', '-v', 'DESIRED_GAME_COUNT=100000', '-f', './examples/tic-tac-toe/referee.awk', 'NF=10', 'OFS=:']
+  draw:
+    cmd: "gawk"
+    arg: [ '-F', ':', '-f', 'examples/tic-tac-toe/draw.awk' ]
+  only_finishes:
+    cmd: "grep"
+    arg:
+      - "--line-buffered"
+      - "^[DW]"
+  turn_swapper:
+    cmd: "sed"
+    arg:
+      - "--unbuffered"
+      - |
+        s/^O/9/
+        s/^X/O/
+        s/^9/X/

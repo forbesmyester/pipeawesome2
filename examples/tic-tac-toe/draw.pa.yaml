@@ -1,0 +1,16 @@
+connection:
+  initial: "faucet:input | launch:draw | drain:output"
+drain:
+  output:
+    destination: '-'
+faucet:
+  input:
+    source: '-'
+launch:
+  draw:
+    cmd: "awk"
+    arg:
+      - '-F'
+      - ':'
+      - '-f'
+      - 'examples/tic-tac-toe/draw.awk'

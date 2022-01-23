@@ -1,0 +1,17 @@
+connection:
+  initial_word: "f:input | l:player | l:referee | l:draw | d:output"
+drain:
+  output: { destination: '-' }
+faucet:
+  input: { source: '-' }
+launch:
+  player:
+    cmd: "gawk"
+    arg: [ '-F', ':', '-v', 'PLAYER=O', '-f', 'examples/tic-tac-toe/player.awk' ]
+  referee:
+    cmd: "gawk"
+    arg: ['-F', ':', '-f', './examples/tic-tac-toe/referee.awk', 'NF=10', 'OFS=:']
+  draw:
+    cmd: "gawk"
+    arg: [ '-F', ':', '-f', 'examples/tic-tac-toe/draw.awk' ]
+
