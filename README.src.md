@@ -25,7 +25,7 @@ So we write a UNIX pipeline like `cat myfile | awk 'PAT { do something }' | grep
 
 This could be visualized like the following:
 
-```unixpipe diagram-dot svg
+```unixpipe diagram-dot svg readme-img/so-what-does-this-project-add-1.svg
 digraph {
     rankdir = LR;
     cat -> awk -> grep2 -> awk2 -> sed -> sort
@@ -41,7 +41,7 @@ digraph {
 
 However it might be that you want to:
 
-```unixpipe diagram-dot svg
+```unixpipe diagram-dot svg readme-img/so-what-does-this-project-add-2.svg
 digraph {
     rankdir = LR;
     cat -> awk -> grep1 -> do -> awk2 -> sed -> sort
@@ -100,7 +100,7 @@ I then wrote a Pipeawesome configuration file which wraps this:
 ```
 Which could be visualized as:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config ./examples/tic-tac-toe/draw.pa.yaml -d | diagram-dot svg
+```unixpipe ./target/debug/pipeawesome2 graph --config ./examples/tic-tac-toe/draw.pa.yaml -d | diagram-dot svg readme-img/drawing-the-grid.svg
 ```
 
 <sub>**NOTE**: I got Pipeawesome drew this graph by running `./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/draw.pa.yaml --diagram-only`.</sub>
@@ -178,7 +178,7 @@ The following configuration includes new code, but the configuration adds no con
 
 Which could be visualized as:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config ./examples/tic-tac-toe/have_a_go.pa.yaml -d | diagram-dot svg
+```unixpipe ./target/debug/pipeawesome2 graph --config ./examples/tic-tac-toe/have_a_go.pa.yaml -d | diagram-dot svg readme-img/having-a-go.svg
 ```
 
 It can be executed with `echo 'O:::X::O::::X' | ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/have_a_go.pa.yaml`
@@ -208,7 +208,7 @@ After adding the junctions and supporting changes, the full configuration looks 
 
 The graphs drawn by Pipeawesome now become much more interesting:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/random_player.pa.yaml -d | diagram-dot svg
+```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/random_player.pa.yaml -d | diagram-dot svg code-for-generating-the-random-player.svg
 ```
 
 The changes are:
@@ -237,12 +237,12 @@ To create the full game, there are two more things that need to happen:
 
 This is simple, all we need to do is take our previous configuration, add a junction between `launch:referee` and `launch:draw` and feed a new branch all the way back into `junction:turn`. The configuration now looks like:
 
-```yaml file=examples/tic-tac-toe/multiple_turns.pa.yaml -d | diagram-dot svg
+```yaml file=examples/tic-tac-toe/multiple_turns.pa.yaml -d
 ```
 
 Which could be visualized as:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/multiple_turns.pa.yaml -d | diagram-dot svg
+```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/multiple_turns.pa.yaml -d | diagram-dot svg readme-img/multiple-turns.svg
 ```
 
 **NOTE:** This graph is identical except the extra `junction:loop` and the line from it that goes all the way back to turn.
@@ -256,12 +256,12 @@ This configuration however results to a non-thrilling game however as only one p
 
 To get the player taking a turn to alternate we just need to put in some code that swaps the first character between "X" and "O between `junction:loop` and `junction:turn`. This component is called `turn_swapper` in the configuration below:
 
-```yaml file=examples/tic-tac-toe/pa.yaml -d | diagram-dot svg
+```yaml file=examples/tic-tac-toe/pa.yaml -d
 ```
 
 Which could be visualized as:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/pa.yaml -d | diagram-dot svg
+```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/pa.yaml -d | diagram-dot svg readme-img/alternating-players.svg
 ```
 
 The end result is a (somewhat) realisic looking game of tic-tac-toe where the players take turns and someone wins (or it is a draw):
@@ -273,7 +273,7 @@ The end result is a (somewhat) realisic looking game of tic-tac-toe where the pl
 
 You can draw a graph legend by running the command `./target/debug/pipeawesome2 graph --config [YOUR_CONFIG_HERE] --legend-only`. The output will be Graphviz DOT.
 
-```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/random_player.pa.yaml --legend-only | diagram-dot svg
+```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/random_player.pa.yaml --legend-only | diagram-dot svg readme-img/pipeawesome-graph-legend.svg
 ```
 
 ## Component Types
@@ -294,7 +294,7 @@ The pipes can be extended to configure how to handle broken pipes (when a reciev
 
 ### Component: Faucet
 
-```unixpipe diagram-dot svg
+```unixpipe diagram-dot svg readme-img/component-faucet.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -325,7 +325,7 @@ A Faucet is the main way to get data into Pipeawesome. Faucets have a property c
 
 ### Component: Launch
 
-```unixpipe diagram-dot svg
+```unixpipe diagram-dot svg readme-img/component-launch.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -403,7 +403,7 @@ The following are configurable:
 
 ### Component: Drain
 
-```unixpipe diagram-dot svg
+```unixpipe diagram-dot svg readme-img/component-drain.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -436,7 +436,7 @@ This is the normal way to get output from Pipeawesome. the output can be sent to
 
 (a brief interlude)
 
-```unixpipe diagram-dot svg
+```unixpipe diagram-dot svg readme-img/component-junction.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -476,7 +476,7 @@ There's no configuration for **Junction** but it is the only component that has 
 
 ### Components - Buffer & Regulator
 
-```unixpipe diagram-dot svg
+```unixpipe diagram-dot svg readme-img/component-buffer.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -503,7 +503,7 @@ digraph G {
 }
 ```
 
-```unixpipe diagram-dot svg
+```unixpipe diagram-dot svg readme-img/component-regulator.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -548,7 +548,7 @@ The configuration below is a version of the tic-tac-toe configuration above, but
 
 Which could be visualized as:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config ./examples/tic-tac-toe/many_games.pa.yaml -d | diagram-dot svg
+```unixpipe ./target/debug/pipeawesome2 graph --config ./examples/tic-tac-toe/many_games.pa.yaml -d | diagram-dot svg readme-img/loop-buffer-and-regulator.svg
 ```
 
 In this situation, the `l:random_player` is creating 100,000 messages instead of just 1, but every one of these will loop back around until the game is complete, so we will have a significant amount of messages. In this configuration, when there are more than 100 messages in `buffer:reprocess`, the `regulator:regulate_flow` will stop accepting messages, but when the amount of messages in the buffer drops below 10, it will resume. Using these two components can solve the problem of issue described above.
@@ -600,7 +600,7 @@ In this example 5 and 1 are priorities, when priorities are not specified, they 
 
 This is the legend for diagrams shown in the [Component Types](#component-types) section.
 
-```unixpipe diagram-dot svg
+```unixpipe diagram-dot svg readme-img/component-legends.svg
 digraph G {
     rankdir=LR
     subgraph cluster_legend {
