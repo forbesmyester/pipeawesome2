@@ -6,7 +6,7 @@ I added loops, branches and joins to UNIX pipes.
 
 ## Why did you do this?
 
-I feel UNIX pipes are underappreciated and could be destined for much more.
+I feel UNIX pipes are underappreciated and should be considered more often.
 
 ## So why do you love UNIX pipes?
 
@@ -15,13 +15,12 @@ UNIX pipes are wonderful as when you write software using them they have:
  * High performance.
  * Back Pressure.
  * Really easy to reason about at the individual UNIX process level (it's just STDIN and STDOUT/STDERR).
- * Easy to reason about what data enters individual processes.
  * Insanely light and zero infrastructure compared to a "proper" solution.
  * Easily to integrate with a "proper" solution when the need arises.
 
 ## So what does this project add?
 
-So we write a UNIX pipeline like `cat myfile | awk 'PAT { do something }' | grep '^good' | awk '$1='good' { print /dev/stdout } else { print /dev/stderr }' | sed 's/good/perfect' | sort` and this is powerful and wonderful.
+Given a UNIX pipeline like `cat myfile | awk 'PAT { do something }' | grep '^good' | awk '$1='good' { print /dev/stdout } else { print /dev/stderr }' | sed 's/good/perfect' | sort` and this is powerful and wonderful.
 
 This could be visualized like the following:
 
@@ -59,7 +58,7 @@ digraph {
 }
 ```
 
-Some or all of this is possible to do with tools like `mkfifo`, depending on your skill level, but you certainly won't end up with something that is anywhere near as easy for someone to follow as the simple UNIX command we initially wrote out.
+Some or all of this is possible to do with tools like `mkfifo`, depending on your skill level, but you certainly won't end up with something that is anywhere near as easy for someone to follow as the simple UNIX command shown earlier.
 
 ## An example project
 
@@ -111,7 +110,7 @@ In Pipeawesome there are pipes, which connect different types of components. The
 
 You could execute this Pipeawesome configuration file with `echo 'O:::X::O::::X' | ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/draw.pa.yaml`
 
-This is of course, a trivial and pointless example, but it allows me to show you the Pipeawesome file format with minimal complexity.
+This is of course, a trivial and pointless example because you'd run awk directly, but it allows me to show you the Pipeawesome file format with minimal complexity.
 
 Lets break it down into it's constituent parts:
 
@@ -124,7 +123,7 @@ connection:
 
 Connection sets explain how to join components together. There can be multiple connection sets, but here there is just one.
 
-For more information please see [**Pipe Variations, Output Types and Input Priorities](#pipe-variations-output-types-and-input-priorities).
+For more information please see [Pipe Variations, Output Types and Input Priorities](#pipe-variations-output-types-and-input-priorities).
 
 #### Faucet
 
@@ -138,7 +137,7 @@ A Faucet is the main way to get data into Pipeawesome from the outside world, th
 
 For more information please see [**Components > Faucet**](#faucet).
 
-<sub>**NOTE**: It is perfectly valid for a Launch to also generate the initial data.</sub>
+<sub>**NOTE**: It is perfectly valid for a Launch to also generate the initial data, in which case a Faucet would not be required.</sub>
 
 #### Launch
 
@@ -169,7 +168,11 @@ This is how data exits Pipeawesome. Output can be sent to STDOUT, STDERR or a fi
 
 For more information please see [**Components > Drain**](#drain).
 
+<sub>**NOTE**: If writing to a queueing solution such as RabbitMQ or AWS SQS you could use a Launch instead.</sub>
+
 ### Having a Go
+
+Let's let the player take their turn.
 
 The following configuration includes new code, but the configuration adds no concepts that you've not already seen:
 
@@ -183,7 +186,7 @@ Which could be visualized as:
 
 It can be executed with `echo 'O:::X::O::::X' | ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/have_a_go.pa.yaml`
 
-The output from this will be the same as previous but with an extra `O` on the grid: 
+The output from this will be the same as previous but with an extra `O` somewhere on the grid: 
 
 ```unixpipe echo 'O:::X::O::::X' | ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/have_a_go.pa.yaml | wrap-as-lang text
 ```
@@ -195,7 +198,7 @@ The output from this will be the same as previous but with an extra `O` on the g
 #### Code for generating the random player
 I figured out that `echo $((RANDOM % 2))::::::::: | sed "s/1/X/" | sed "s/0/O/"` is a single line BASH snippet for selecting a random first player.
 
-However this still means I have to let the selected player take that turn. This means that I must explain what a **Junction** is.
+However this still means I have to let the selected player take that turn, which means I must explain what a **Junction** is.
 
 A **Junction** is a prioritized many-to-many connector. Anything that comes into any one of it's inputs will be sent to all of it's outputs.
 
@@ -208,18 +211,16 @@ After adding the junctions and supporting changes, the full configuration looks 
 
 The graphs drawn by Pipeawesome now become much more interesting:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/random_player.pa.yaml -d | diagram-dot svg code-for-generating-the-random-player.svg
+```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/random_player.pa.yaml -d | diagram-dot svg readme-img/code-for-generating-the-random-player.svg
 ```
 
 The changes are:
 
-The Faucet configuration has been completely removed (it is not required), in this situation, the initial message comes from `l:random_player`
+The Faucet configuration has been completely removed (it is not required), in this situation, the initial message comes from `l:random_player`. I have also added / changed some Launch.
 
-As well as adding `l:random_player` I also added `l:player_o_filter`, `l:player_x_filter`, `l:referee` and changed `l:player` into `l:player_o` and `l:player_x`, but the overall format should not be too surprising by now.
+The big change is that there are now multiple keys / connections sets / lines within `connection:`. You may notice that the `random_selection:` connection set writes to `junction:turn` but `junction:turn` is read in both the `player_o_branch` and `player_x_branch` connection sets, which in turn both write to `junction:draw`. The connection set names are completely arbitrary, though they must be unique.
 
-The big change is that there are now multiple keys / connections sets / lines within `connection:`. You may notice that the `random_selection:` connection set writes to `junction:turn` but `junction:turn` is read in both the `player_o_branch` and `player_x_branch` connection sets, which in turn both write to `junction:draw`. The connection set names are completely arbitrary, though the must be unique.
-
-<sub>**NOTE**: It is important to know that both `player_o_filter` and `player_x_filter` both recieve the line generated by l:random player. It is just the case that one of them always filters it out.</sub>
+<sub>**NOTE**: It is important to know that both `l:player_o_filter` and `l:player_x_filter` both recieve the lines generated by `l:random player`. It is just the case that one of them always filters it out.</sub>
 
 Running this code results in a grid where either an `O` or `X` could be anywhere on the grid:
 
@@ -245,9 +246,9 @@ Which could be visualized as:
 ```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/multiple_turns.pa.yaml -d | diagram-dot svg readme-img/multiple-turns.svg
 ```
 
-**NOTE:** This graph is identical except the extra `junction:loop` and the line from it that goes all the way back to turn.
+**NOTE:** This graph is identical except the extra `junction:loop` and the line from it that goes all the way back to turn (connection set `looper`).
 
-This configuration however results to a non-thrilling game however as only one player ever gets a go!
+This configuration results in a non-thrilling game however as only one player ever gets a go!
 
 ```unixpipe ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/multiple_turns.pa.yaml | wrap-as-lang text
 ```
@@ -264,7 +265,7 @@ Which could be visualized as:
 ```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/pa.yaml -d | diagram-dot svg readme-img/alternating-players.svg
 ```
 
-The end result is a (somewhat) realisic looking game of tic-tac-toe where the players take turns and someone wins (or it is a draw):
+The end result is a (somewhat) realisic looking game of tic-tac-toe where the players take turns and someone wins (or the game ends in a draw):
 
 ```unixpipe ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/pa.yaml | wrap-as-lang text
 ```
@@ -280,15 +281,13 @@ You can draw a graph legend by running the command `./target/debug/pipeawesome2 
 
 Component types can be:
 
- * [**Faucet**](#faucet): A source of input.
- * [**Launch**](#launch): A running program.
- * [**Drain**](#drain): A destination were final data will be sent to.
+ * [**Faucet**](#faucet): A source of input when it comes from outside.
+ * [**Launch**](#launch): A running program that can process data.
+ * [**Drain**](#drain): Data written here exists Pipeawesome.
  * [**Junction**](#junction): A many to many connector which can manage priorities of incoming data.
  * [**Buffer / Regulator**](#buffer-and-regulator): Stores an infinite amount of messages / Regulates the amount of messages
 
-The pipes can be extended to configure how to handle broken pipes (when a recieving program exits before a sending program) and you can also control whether they're sending STDIN, STDOUT or EXIT statuses.
-
-<sub>Note: There are diagrams in this section, the legend for this is shown at [#component-diagram-legend](#component-diagram-legend)</sub>
+<sub>**Note:** There are diagrams in this section, the legend for this is shown at [#component-diagram-legend](#component-diagram-legend)</sub>
 
 
 
@@ -398,7 +397,7 @@ The following are configurable:
 
  * **cmd**: The command to run
  * **path**: Where to run it
- * **env**: The environmentl variables to run it in
+ * **env**: The environmental variables to run it in
  * **arg**: arguments that will be passed through to the the command
 
 ### Component: Drain
@@ -430,7 +429,7 @@ drain:
     destination: '-'
 ```
 
-This is the normal way to get output from Pipeawesome. the output can be sent to "`-`" for STDOUT, "`_`" for STDERR, anything else is taken as a filename where data will be wrote to.
+This is the normal way to get data out from Pipeawesome. the output can be sent to "`-`" for STDOUT, "`_`" for STDERR or a file, which is specified by using any other value.
 
 ### Component: Junction
 
@@ -470,9 +469,9 @@ digraph G {
 
 A **Junction** is a many-to-many connector. Anything that comes into one of it's inputs will be sent to all of it's outputs.
 
-There's no configuration for **Junction** but it is the only component that has any reason to respect input priorities.
+There's no configuration for **Junction**, however it is the only component that has any reason to respect input priorities.
 
-<sub>**NOTE: Messages are considered to be seperated by Windows or UNIX line endings. This may become configurable in future.</sub>
+<sub>**NOTE: Messages are considered to be seperated by Windows or UNIX line endings. It would be realitvely easy to make this configurable.</sub>
 
 ### Components - Buffer & Regulator
 
@@ -532,14 +531,16 @@ digraph G {
 
 The only components I have not used in the tic-tac-toe example are the **Buffer** and **Regulator**.
 
-Looking back at some of the tic-tac-toe configurations after [Multiple Turns](#multiple-turns) you can see a message is often sent to near the start of the process from very close to the end of the process. If there are a finite number of messages coming into the system, as in a single game of tic-tac-toe, this is not a problem but if more and more messages are being added to the system and all the old messages are being processed, you can see that may be an issue. This situation is unique to loops.
+Looking back at some of the tic-tac-toe configurations after [Multiple Turns](#multiple-turns) you can see a message is often sent to near the start of the process from very close to the end of the process.
 
-The connectors between components have finite capacity ([they are async version of bounded Rust channels](https://docs.rs/async-std/1.9.0/async_std/channel/fn.bounded.html)), which is pretty much required for back pressure to work, but it does leave a form of deadlock being possible in configurations that include loops.
+If there are a finite number of messages coming into the system, as in a single game of tic-tac-toe then this is not a problem. However if more and more messages are being added to the system and all the old messages are still being processed, you can see that may be an issue. This situation is unique to loops and is usually handled via backpressure.
+
+The connectors between components have finite capacity ([they are async version of bounded Rust channels](https://docs.rs/async-std/1.9.0/async_std/channel/fn.bounded.html)), which is how our backpressure works, but it does leave a form of deadlock being possible in configurations that include loops.
 
 Below I describe the two components that can be used to control this situation:
 
  * A **Buffer** is connector with infinite message capacity (it is an [unbounded Rust channel](https://docs.rs/async-std/1.9.0/async_std/channel/fn.unbounded.html)).
- * The **Regulator** can turn on and off the flow of messages passing through it depending on how many messages are in a configured set of Buffers.
+ * The **Regulator** can turn on and off the flow of messages passing through it by observing how many messages are in a configured set of Buffers.
 
 The configuration below is a version of the tic-tac-toe configuration above, but modified to run 100,000 games:
 
@@ -557,11 +558,11 @@ In this situation, the `l:random_player` is creating 100,000 messages instead of
 
 ### Pipe Variations
 
-When thinking about passing data between programs, when the recieving program dies or closes it's input, we eventually we end up with data coming out from the sending program, but with nowhere for it to go. In this situation I think we have three options:
+Thinking about passing data between programs, when the recieving program dies or closes it's input, we end up with data coming out from the sending program, but with nowhere for it to go. In this situation I think we have three options:
 
  1. Terminate (T): Terminate Pipeawesome.
  1. Finish (F): Close the pipe - letting the sending program deal with the problem itself (this will likely cause a cascade effect).
- 2. Consume (C): Pipeawesome will keep the pipe open by consuming the data itself (bug discarding it).
+ 2. Consume (C): Pipeawesome will keep the pipe open by consuming the data itself (but discarding it).
 
 You can specify the the pipe variation using:
 
@@ -575,7 +576,7 @@ The normal, single pipe symbol (`l:sender | l:reciever`) is merely a quick way o
 
 A running program may not output all it's output to STDOUT, it can also send data to STDERR.
 
-Pipeawesome allows you to capture what programs output to STDOUT and STDERR but also the EXIT code when the program finishes. This is done by using `[O]`, `[E]` and `[X]` just after the component in the connection set, for example:
+Pipeawesome allows you to capture when programs output to STDOUT and STDERR but also the EXIT code when the program finishes. This is done by using `[O]`, `[E]` and `[X]` just after the component in the connection set, for example:
 
 ```yaml file=./examples/ls/pa.yaml
 ```
@@ -584,7 +585,7 @@ NOTE: Infact on UNIX programs can also read & write to `/dev/fdN` where N can be
 
 ### Input Priorities
 
-All components except Junction only have one input, but a Junction can have multiple. To control which input to read we can add priorities, these are specified like the following:
+All components except Junction only have one input, but a Junction can have multiple. To control which input to read from we can add priorities, these are specified like the following:
 
 ```yaml
 connection:

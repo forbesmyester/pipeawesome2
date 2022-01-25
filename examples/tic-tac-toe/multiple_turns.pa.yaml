@@ -3,7 +3,7 @@ connection:
   player_o_branch: "j:turn | l:player_o_filter | l:player_o | j:draw"
   player_x_branch: "j:turn | l:player_x_filter | l:player_x | j:draw"
   last_draw: "j:draw | l:referee | j:loop | l:draw | d:output"
-  looper: "j:loop | [5]j:turn"
+  looper: "j:loop | j:turn"
 drain:
   output: { destination: '-' }
 launch:

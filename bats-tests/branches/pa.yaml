@@ -11,15 +11,15 @@ faucet:
   tap:
     source: '-'
 launch:
-  grep_only_just_right: { command: "grep", arg: [ "--line-buffered", '^JUST_RIGHT\:' ] }
-  grep_only_too_hot: { command: "grep", arg: [ "--line-buffered", '^TOO_HOT\:' ] }
-  grep_only_too_cold: { command: "grep", arg: [ "--line-buffered", '^TOO_COLD\:' ] }
-  sort: { command: "sort" }
-  take_to_customer: { command: "awk", arg: [ '{ print $0": Take to customer"; fflush() }' ] }
-  leave_to_cool: { command: "awk", arg: [ '{ print $0": Leave to cool"; fflush() }' ] }
-  heat_up: { command: "awk", arg: [ '{ print $0": Put in microwave"; fflush() }' ] }
+  grep_only_just_right: { cmd: "grep", arg: [ "--line-buffered", '^JUST_RIGHT\:' ] }
+  grep_only_too_hot: { cmd: "grep", arg: [ "--line-buffered", '^TOO_HOT\:' ] }
+  grep_only_too_cold: { cmd: "grep", arg: [ "--line-buffered", '^TOO_COLD\:' ] }
+  sort: { cmd: "sort" }
+  take_to_customer: { cmd: "awk", arg: [ '{ print $0": Take to customer"; fflush() }' ] }
+  leave_to_cool: { cmd: "awk", arg: [ '{ print $0": Leave to cool"; fflush() }' ] }
+  heat_up: { cmd: "awk", arg: [ '{ print $0": Put in microwave"; fflush() }' ] }
   remove_too_hot_tag: &remove_tag
-    command: "sed"
+    cmd: "sed"
     arg: [ '-u', 's/^[A-Z_]\+\://' ]
   remove_too_cold_tag: *remove_tag
   remove_too_just_right_tag: *remove_tag
@@ -33,7 +33,7 @@ launch:
           print $0" = "res
           fflush()
         }
-    command: gawk
+    cmd: gawk
   tag_by_temperature_new_order: &tag_by_temperature
     arg:
       - |
@@ -41,6 +41,6 @@ launch:
         ($2 <= 88) { print "TOO_COLD:"$0; fflush(); next }
         ($2 >= 93) { print "TOO_HOT:"$0; fflush(); next }
         { print "JUST_RIGHT:"$0; fflush(); next }
-    command: gawk
+    cmd: gawk
 
 

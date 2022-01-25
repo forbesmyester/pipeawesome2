@@ -1,7 +1,11 @@
 {
   "faucet": {
     "tap": {
-      "input": "-",
+      "source": "-"
+    }
+  },
+  "regulator": {
+    "reg": {
       "min_buffered": 10,
       "max_buffered": 1000,
       "monitored_buffers": ["missing"]
@@ -9,11 +13,11 @@
   },
   "drain": { "hole": { "output": "-" } },
   "launch": {
-    "maths": { "command": "gawk", "arg": [ "{ cmd = \"echo \"$0\" | bc\" ; cmd | getline res ; close(cmd); print INPUT\": \"$0\": \"res; fflush() }"] },
-    "decorate": { "command": "cat" },
-    "quality_control": { "command": "gawk", "arg": [ "BEGIN { FS=\":\" }{ if ($3 < 88) print \"TOO_COLD:\"$2\":\"$3; else if ($3 > 93) print \"TOO_HOT:\"$2\":\"$3; else print \"JUST_RIGHT:\"$2\":\"$3; fflush() }" ] }
+    "maths": { "cmd": "gawk", "arg": [ "{ cmd = \"echo \"$0\" | bc\" ; cmd | getline res ; close(cmd); print INPUT\": \"$0\": \"res; fflush() }"] },
+    "decorate": { "cmd": "cat" },
+    "quality_control": { "cmd": "gawk", "arg": [ "BEGIN { FS=\":\" }{ if ($3 < 88) print \"TOO_COLD:\"$2\":\"$3; else if ($3 > 93) print \"TOO_HOT:\"$2\":\"$3; else print \"JUST_RIGHT:\"$2\":\"$3; fflush() }" ] }
   },
   "connection": {
-    "main": "f:tap | l:maths | l:quality_control | l:prettify | d:hole"
+    "main": "f:tap | r:reg | l:maths | l:quality_control | l:prettify | l:present | d:hole"
   }
 }

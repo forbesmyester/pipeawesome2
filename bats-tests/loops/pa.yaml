@@ -13,22 +13,22 @@ faucet:
   tap:
     source: '-'
 launch:
-  grep_only_new_order: { command: "grep", arg: [ "--line-buffered", '^NEW_ORDER\:' ] }
-  grep_only_too_hot: { command: "grep", arg: [ "--line-buffered", '^TOO_HOT\:' ] }
-  grep_only_too_cold: { command: "grep", arg: [ "--line-buffered", '^TOO_COLD\:' ] }
-  add_stdout: { command: "sed", arg: [ '-u', 's/^/STDOUT: /' ] }
-  sort: { command: "sort" }
-  mark_new_order: { command: "sed", arg: [ '-u', 's/^/NEW_ORDER:/' ] }
-  leave_to_cool: { command: "awk", arg: [ '{ print $0" - 6"; fflush() }' ] }
-  heat_up: { command: "awk", arg: [ '{ print $0" + 15"; fflush() }' ] }
+  grep_only_new_order: { cmd: "grep", arg: [ "--line-buffered", '^NEW_ORDER\:' ] }
+  grep_only_too_hot: { cmd: "grep", arg: [ "--line-buffered", '^TOO_HOT\:' ] }
+  grep_only_too_cold: { cmd: "grep", arg: [ "--line-buffered", '^TOO_COLD\:' ] }
+  add_stdout: { cmd: "sed", arg: [ '-u', 's/^/STDOUT: /' ] }
+  sort: { cmd: "sort" }
+  mark_new_order: { cmd: "sed", arg: [ '-u', 's/^/NEW_ORDER:/' ] }
+  leave_to_cool: { cmd: "awk", arg: [ '{ print $0" - 6"; fflush() }' ] }
+  heat_up: { cmd: "awk", arg: [ '{ print $0" + 15"; fflush() }' ] }
   remove_new_order_tag: &remove_tag
-    command: "sed"
+    cmd: "sed"
     arg: [ '-u', 's/^[A-Z_]\+\://' ]
   remove_too_hot_tag: *remove_tag
   remove_too_cold_tag: *remove_tag
   remove_too_just_right_tag: *remove_tag
   loop_control:
-    command: "gawk"
+    cmd: "gawk"
     description:
       - |
         Input comes in on STDIN and starts with either:
@@ -37,7 +37,7 @@ launch:
           * "JUST_RIGHT" At the correct temperature (output to STDOUT)
           * Something else... (output to STDERR)
 
-        STDERR is the the loop and STDOUT is the output of the PipeAwesome
+        STDERR is the the loop and STDOUT is the output of the Pipeawesome
         process.
 
         When we have as many items seen with "JUST_RIGHT" as as "NEW_ORDER"
@@ -59,7 +59,7 @@ launch:
         }
         { print $0 > "/dev/stderr" }
   remove_total_from_too_hot: &remove_total
-    command: "gawk"
+    cmd: "gawk"
     arg:
       - |
         BEGIN { FS="=" }
@@ -75,7 +75,7 @@ launch:
           print $0" = "res
           fflush()
         }
-    command: gawk
+    cmd: gawk
   maths_too_hot: *maths
   maths_too_cold: *maths
   tag_by_temperature_new_order: &tag_by_temperature
@@ -85,6 +85,6 @@ launch:
         ($2 <= 88) { print "TOO_COLD:"$0; fflush(); next }
         ($2 >= 93) { print "TOO_HOT:"$0; fflush(); next }
         { print "JUST_RIGHT:"$0; fflush(); next }
-    command: gawk
+    cmd: gawk
   tag_by_temperature_too_hot: *tag_by_temperature
   tag_by_temperature_too_cold: *tag_by_temperature

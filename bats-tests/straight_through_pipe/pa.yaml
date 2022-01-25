@@ -6,7 +6,7 @@ faucet:
   raw_ingredients: { source: './bats-tests/straight_through_pipe/input.txt' }
 launch:
   kitchen:
-    command: gawk
+    cmd: gawk
     arg:
     - |
       {
@@ -17,7 +17,7 @@ launch:
         fflush()
       }
   quality_control:
-    command: gawk
+    cmd: gawk
     arg:
     - |
       BEGIN { FS=":" }
