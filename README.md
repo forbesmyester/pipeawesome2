@@ -1,5 +1,56 @@
 # Pipeawesome 2
 
+## Table of contents
+
+*   [As my mum would say... accusingly... "WHAT did YOU do?!?!?!"](#as-my-mum-would-say-accusingly-what-did-you-do)
+
+*   [Why did you do this?](#why-did-you-do-this)
+
+*   [So why do you love UNIX pipes?](#so-why-do-you-love-unix-pipes)
+
+*   [So what does this project add?](#so-what-does-this-project-add)
+
+*   [An example project](#an-example-project)
+
+    *   [Data Format](#data-format)
+
+    *   [Drawing the grid](#drawing-the-grid)
+
+        *   [Connection / Connection Sets](#connection--connection-sets)
+        *   [Faucet](#faucet)
+        *   [Launch](#launch)
+        *   [Drain](#drain)
+
+    *   [Having a Go](#having-a-go)
+
+    *   [Picking a random player to start the game](#picking-a-random-player-to-start-the-game)
+
+        *   [Code for generating the random player](#code-for-generating-the-random-player)
+
+    *   [A complete game](#a-complete-game)
+
+        *   [Multiple turns](#multiple-turns)
+        *   [Alternating players](#alternating-players)
+
+*   [Component Types](#component-types)
+
+    *   [Component: Faucet](#component-faucet)
+    *   [Component: Launch](#component-launch)
+    *   [Component: Drain](#component-drain)
+    *   [Component: Junction](#component-junction)
+    *   [Component: Buffer & Regulator](#component-buffer--regulator)
+
+*   [Pipe Variations, Output Types and Input Priorities.](#pipe-variations-output-types-and-input-priorities)
+
+    *   [Pipe Variations](#pipe-variations)
+    *   [Output Types](#output-types)
+    *   [Input Priorities](#input-priorities)
+
+*   [Appendix](#appendix)
+
+    *   [Pipeawesome Graph Legend](#pipeawesome-graph-legend)
+    *   [Component Diagram Legend](#component-diagram-legend)
+
 ## As my mum would say... accusingly... "WHAT did YOU do?!?!?!"
 
 I added loops, branches and joins to UNIX pipes.
@@ -128,7 +179,7 @@ Which could be visualized as:
 
 <sub>**NOTE**: I got Pipeawesome drew this graph by running `./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/draw.pa.yaml --diagram-only`.</sub>
 
-<sub>**NOTE**: Using `./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/draw.pa.yaml --legend-only` will generate the graphs legend, this is common for all graphs and shown at [near the bottom of page](#pipeawesome-graph-legend).</sub>
+<sub>**NOTE**: Using `./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/draw.pa.yaml --legend-only` will generate the graphs legend, this is common for all graphs and shown [in the appendix](#pipeawesome-graph-legend).</sub>
 
 In Pipeawesome there are pipes, which connect different types of components. The components types here are `faucet`, `launch` and `drain` with the names of those components being `input`, `draw` and `output`. The names are just names, but they may need to be referenced elsewhere within the configuration file depending on the component type.
 
@@ -147,7 +198,7 @@ connection:
 
 Connection sets explain how to join components together. There can be multiple connection sets, but here there is just one.
 
-For more information please see [Pipe Variations, Output Types and Input Priorities](#pipe-variations-output-types-and-input-priorities).
+For more information please see [Pipe Variations, Output Types and Input Priorities.](#pipe-variations-output-types-and-input-priorities).
 
 #### Faucet
 
@@ -159,7 +210,7 @@ faucet:
 
 A Faucet is the main way to get data into Pipeawesome from the outside world, the configuration here is for the one named `input`.
 
-For more information please see [**Components > Faucet**](#faucet).
+For more information please see [Component: Faucet](#component-faucet).
 
 <sub>**NOTE**: It is perfectly valid for a Launch to also generate the initial data, in which case a Faucet would not be required.</sub>
 
@@ -178,7 +229,7 @@ launch:
 
 This controls how the programs are executed.
 
-For more information please see [**Components > Launch**](#launch).
+For more information please see [Component: Launch](#component-launch).
 
 #### Drain
 
@@ -190,7 +241,7 @@ drain:
 
 This is how data exits Pipeawesome. Output can be sent to STDOUT, STDERR or a file.
 
-For more information please see [**Components > Drain**](#drain).
+For more information please see [Component: Drain](#component-drain).
 
 <sub>**NOTE**: If writing to a queueing solution such as RabbitMQ or AWS SQS you could use a Launch instead.</sub>
 
@@ -232,9 +283,9 @@ Player O
 
    |   | X 
 ---+---+---
- O | O |   
+   | O |   
 ---+---+---
-   |   | X 
+ O |   | X 
 ```
 
 <sub>**NOTE**: There is one extra `O` than in in the input, this was added by `player.awk`.</sub>
@@ -249,7 +300,7 @@ However this still means I have to let the selected player take that turn, which
 
 A **Junction** is a prioritized many-to-many connector. Anything that comes into any one of it's inputs will be sent to all of it's outputs.
 
-For more information please see [**Components > Junction**](#junction).
+For more information please see [Component: Junction](#component-junction).
 
 After adding the junctions and supporting changes, the full configuration looks like this:
 
@@ -300,9 +351,9 @@ Player X
 
    |   |   
 ---+---+---
- X |   |   
----+---+---
    |   |   
+---+---+---
+ X |   |   
 ```
 
 ### A complete game
@@ -363,41 +414,33 @@ Player O
 
    |   |   
 ---+---+---
- O |   |   
----+---+---
-   |   |   
-
-Player O 
-
    |   |   
 ---+---+---
  O |   |   
----+---+---
-   |   | O 
 
 Player O 
 
+   | O |   
+---+---+---
    |   |   
 ---+---+---
  O |   |   
----+---+---
- O |   | O 
 
 Player O 
 
+ O | O |   
+---+---+---
    |   |   
 ---+---+---
- O |   | O 
----+---+---
- O |   | O 
+ O |   |   
 
 Player O WON!
 
-   |   |   
+ O | O |   
 ---+---+---
- O | O | O 
+ O |   |   
 ---+---+---
- O |   | O 
+ O |   |   
 ```
 
 #### Alternating players
@@ -450,86 +493,88 @@ Which could be visualized as:
 The end result is a (somewhat) realisic looking game of tic-tac-toe where the players take turns and someone wins (or the game ends in a draw):
 
 ```text
-Player O 
-
-   |   |   
----+---+---
- O |   |   
----+---+---
-   |   |   
-
 Player X 
 
    |   |   
 ---+---+---
- O | X |   
----+---+---
    |   |   
+---+---+---
+ X |   |   
 
 Player O 
 
    |   |   
----+---+---
- O | X |   
 ---+---+---
    |   | O 
+---+---+---
+ X |   |   
 
 Player X 
 
-   |   |   
+   | X |   
 ---+---+---
- O | X |   
----+---+---
-   | X | O 
-
-Player O 
-
-   |   |   
----+---+---
- O | X |   
----+---+---
- O | X | O 
-
-Player X 
-
-   |   |   
----+---+---
- O | X | X 
----+---+---
- O | X | O 
-
-Player O 
-
    |   | O 
 ---+---+---
- O | X | X 
----+---+---
- O | X | O 
+ X |   |   
 
-Player X WON!
+Player O 
 
    | X | O 
 ---+---+---
- O | X | X 
+   |   | O 
+---+---+---
+ X |   |   
+
+Player X 
+
+ X | X | O 
+---+---+---
+   |   | O 
+---+---+---
+ X |   |   
+
+Player O 
+
+ X | X | O 
+---+---+---
+ O |   | O 
+---+---+---
+ X |   |   
+
+Player X 
+
+ X | X | O 
 ---+---+---
  O | X | O 
+---+---+---
+ X |   |   
+
+Player O 
+
+ X | X | O 
+---+---+---
+ O | X | O 
+---+---+---
+ X | O |   
+
+DRAW!
+
+ X | X | O 
+---+---+---
+ O | X | O 
+---+---+---
+ X | O | X 
 ```
-
-### Pipeawesome Graph Legend
-
-You can draw a graph legend by running the command `./target/debug/pipeawesome2 graph --config [YOUR_CONFIG_HERE] --legend-only`. The output will be Graphviz DOT.
-
-![svg](readme-img/pipeawesome-graph-legend.svg)
 
 ## Component Types
 
 Component types can be:
 
-*   [**Faucet**](#faucet): A source of input when it comes from outside.
-*   [**Launch**](#launch): A running program that can process data.
-*   [**Drain**](#drain): Data written here exists Pipeawesome.
-*   [**Junction**](#junction): A many to many connector which can manage priorities of incoming data.
-*   [**Buffer / Regulator**](#buffer-and-regulator): Stores an infinite amount of messages / Regulates the amount of messages
+*   [**Faucet**](#component-faucet): A source of input when it comes from outside.
+*   [**Launch**](#component-launch): A running program that can process data.
+*   [**Drain**](#component-drain): Data written here exists Pipeawesome.
+*   [**Junction**](#component-junction): A many to many connector which can manage priorities of incoming data.
+*   [**Buffer / Regulator**](#component-buffer--regulator): Stores an infinite amount of messages / Regulates the amount of messages
 
 <sub>**Note:** There are diagrams in this section, the legend for this is shown at [#component-diagram-legend](#component-diagram-legend)</sub>
 
@@ -584,8 +629,6 @@ This is the normal way to get data out from Pipeawesome. the output can be sent 
 
 ### Component: Junction
 
-(a brief interlude)
-
 ![svg](readme-img/component-junction.svg)
 
 A **Junction** is a many-to-many connector. Anything that comes into one of it's inputs will be sent to all of it's outputs.
@@ -594,7 +637,7 @@ There's no configuration for **Junction**, however it is the only component that
 
 <sub>\*\*NOTE: Messages are considered to be seperated by Windows or UNIX line endings. It would be realitvely easy to make this configurable.</sub>
 
-### Components - Buffer & Regulator
+### Component: Buffer & Regulator
 
 ![svg](readme-img/component-buffer.svg)
 
@@ -733,6 +776,12 @@ connection:
 In this example 5 and 1 are priorities, when priorities are not specified, they will be 0. Priorities can also be negative.
 
 ## Appendix
+
+### Pipeawesome Graph Legend
+
+You can draw a graph legend by running the command `./target/debug/pipeawesome2 graph --config [YOUR_CONFIG_HERE] --legend-only`. The output will be Graphviz DOT.
+
+![svg](readme-img/pipeawesome-graph-legend.svg)
 
 ### Component Diagram Legend
 
