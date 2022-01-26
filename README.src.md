@@ -62,6 +62,8 @@ digraph {
 
 Some or all of this is possible to do with tools like `mkfifo`, depending on your skill level, but you certainly won't end up with something that is anywhere near as easy for someone to follow as the simple UNIX command shown earlier.
 
+If the idea of being able to put together more complex pipelines easily interests you, read on!
+
 ## An example project
 
 I decided to make a tic-tac-toe game to demonstrate the capabilities of this project.
@@ -248,7 +250,7 @@ Which could be visualized as:
 ```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/multiple_turns.pa.yaml -d | diagram-dot svg readme-img/multiple-turns.svg
 ```
 
-**NOTE:** This graph is identical except the extra `junction:loop` and the line from it that goes all the way back to turn (connection set `looper`).
+<sub>**NOTE:** This graph is identical except the extra `junction:loop` and the line from it that goes all the way back to turn (connection set `looper`).</sub>
 
 This configuration results in a non-thrilling game however as only one player ever gets a go!
 
@@ -462,7 +464,7 @@ A **Junction** is a many-to-many connector. Anything that comes into one of it's
 
 There's no configuration for **Junction**, however it is the only component that has any reason to respect input priorities.
 
-<sub>**NOTE: Messages are considered to be seperated by Windows or UNIX line endings. It would be realitvely easy to make this configurable.</sub>
+<sub>**NOTE:** Messages are considered to be seperated by Windows or UNIX line endings. It would be realitvely easy to make this configurable.</sub>
 
 ### Component: Buffer & Regulator
 
@@ -572,7 +574,7 @@ Pipeawesome allows you to capture when programs output to STDOUT and STDERR but 
 ```yaml file=./examples/ls/pa.yaml
 ```
 
-NOTE: Infact on UNIX programs can also read & write to `/dev/fdN` where N can be 0 (STDIN), 1 (STDOUT), 2 (STDERR) or other values of N. These other values of N are not currently directly supported.
+<sub>**NOTE:** Infact on UNIX programs can also read & write to `/dev/fdN` where N can be 0 (STDIN), 1 (STDOUT), 2 (STDERR) or other values of N. These other values of N are not currently directly supported.</sub>
 
 ### Input Priorities
 

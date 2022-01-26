@@ -83,6 +83,8 @@ However it might be that you want to:
 
 Some or all of this is possible to do with tools like `mkfifo`, depending on your skill level, but you certainly won't end up with something that is anywhere near as easy for someone to follow as the simple UNIX command shown earlier.
 
+If the idea of being able to put together more complex pipelines easily interests you, read on!
+
 ## An example project
 
 I decided to make a tic-tac-toe game to demonstrate the capabilities of this project.
@@ -281,11 +283,11 @@ The output from this will be the same as previous but with an extra `O` somewher
 ```text
 Player O 
 
-   |   | X 
+ O |   | X 
 ---+---+---
    | O |   
 ---+---+---
- O |   | X 
+   |   | X 
 ```
 
 <sub>**NOTE**: There is one extra `O` than in in the input, this was added by `player.awk`.</sub>
@@ -347,13 +349,13 @@ The big change is that there are now multiple keys / connections sets / lines wi
 Running this code results in a grid where either an `O` or `X` could be anywhere on the grid:
 
 ```text
-Player X 
+Player O 
 
-   |   |   
+   | O |   
 ---+---+---
    |   |   
 ---+---+---
- X |   |   
+   |   |   
 ```
 
 ### A complete game
@@ -405,42 +407,50 @@ Which could be visualized as:
 
 ![svg](readme-img/multiple-turns.svg)
 
-**NOTE:** This graph is identical except the extra `junction:loop` and the line from it that goes all the way back to turn (connection set `looper`).
+<sub>**NOTE:** This graph is identical except the extra `junction:loop` and the line from it that goes all the way back to turn (connection set `looper`).</sub>
 
 This configuration results in a non-thrilling game however as only one player ever gets a go!
 
 ```text
-Player O 
+Player X 
 
+   | X |   
+---+---+---
    |   |   
 ---+---+---
    |   |   
+
+Player X 
+
+   | X |   
 ---+---+---
- O |   |   
-
-Player O 
-
-   | O |   
+   |   | X 
 ---+---+---
    |   |   
----+---+---
- O |   |   
 
-Player O 
+Player X 
 
- O | O |   
+   | X |   
 ---+---+---
-   |   |   
+   |   | X 
 ---+---+---
- O |   |   
+   | X |   
 
-Player O WON!
+Player X 
 
- O | O |   
+ X | X |   
 ---+---+---
- O |   |   
+   |   | X 
 ---+---+---
- O |   |   
+   | X |   
+
+Player X WON!
+
+ X | X | X 
+---+---+---
+   |   | X 
+---+---+---
+   | X |   
 ```
 
 #### Alternating players
@@ -493,25 +503,33 @@ Which could be visualized as:
 The end result is a (somewhat) realisic looking game of tic-tac-toe where the players take turns and someone wins (or the game ends in a draw):
 
 ```text
-Player X 
+Player O 
 
+   | O |   
+---+---+---
    |   |   
 ---+---+---
    |   |   
+
+Player X 
+
+   | O | X 
 ---+---+---
- X |   |   
-
-Player O 
-
    |   |   
 ---+---+---
+   |   |   
+
+Player O 
+
+   | O | X 
+---+---+---
    |   | O 
 ---+---+---
- X |   |   
+   |   |   
 
 Player X 
 
-   | X |   
+   | O | X 
 ---+---+---
    |   | O 
 ---+---+---
@@ -519,51 +537,43 @@ Player X
 
 Player O 
 
-   | X | O 
+   | O | X 
 ---+---+---
    |   | O 
 ---+---+---
- X |   |   
+ X |   | O 
 
 Player X 
 
- X | X | O 
+   | O | X 
 ---+---+---
    |   | O 
 ---+---+---
- X |   |   
+ X | X | O 
 
 Player O 
 
+ O | O | X 
+---+---+---
+   |   | O 
+---+---+---
  X | X | O 
----+---+---
- O |   | O 
----+---+---
- X |   |   
 
 Player X 
 
+ O | O | X 
+---+---+---
+ X |   | O 
+---+---+---
  X | X | O 
----+---+---
- O | X | O 
----+---+---
- X |   |   
-
-Player O 
-
- X | X | O 
----+---+---
- O | X | O 
----+---+---
- X | O |   
 
 DRAW!
 
+ O | O | X 
+---+---+---
+ X | O | O 
+---+---+---
  X | X | O 
----+---+---
- O | X | O 
----+---+---
- X | O | X 
 ```
 
 ## Component Types
@@ -635,7 +645,7 @@ A **Junction** is a many-to-many connector. Anything that comes into one of it's
 
 There's no configuration for **Junction**, however it is the only component that has any reason to respect input priorities.
 
-<sub>\*\*NOTE: Messages are considered to be seperated by Windows or UNIX line endings. It would be realitvely easy to make this configurable.</sub>
+<sub>**NOTE:** Messages are considered to be seperated by Windows or UNIX line endings. It would be realitvely easy to make this configurable.</sub>
 
 ### Component: Buffer & Regulator
 
@@ -761,7 +771,7 @@ launch:
     - "i_should_not_exist"
 ```
 
-NOTE: Infact on UNIX programs can also read & write to `/dev/fdN` where N can be 0 (STDIN), 1 (STDOUT), 2 (STDERR) or other values of N. These other values of N are not currently directly supported.
+<sub>**NOTE:** Infact on UNIX programs can also read & write to `/dev/fdN` where N can be 0 (STDIN), 1 (STDOUT), 2 (STDERR) or other values of N. These other values of N are not currently directly supported.</sub>
 
 ### Input Priorities
 
