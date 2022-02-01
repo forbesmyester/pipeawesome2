@@ -349,9 +349,9 @@ The big change is that there are now multiple keys / connections sets / lines wi
 Running this code results in a grid where either an `O` or `X` could be anywhere on the grid:
 
 ```text
-Player O 
+Player X 
 
-   | O |   
+ X |   |   
 ---+---+---
    |   |   
 ---+---+---
@@ -414,7 +414,7 @@ This configuration results in a non-thrilling game however as only one player ev
 ```text
 Player X 
 
-   | X |   
+ X |   |   
 ---+---+---
    |   |   
 ---+---+---
@@ -422,35 +422,19 @@ Player X
 
 Player X 
 
-   | X |   
----+---+---
-   |   | X 
+ X |   | X 
 ---+---+---
    |   |   
-
-Player X 
-
-   | X |   
 ---+---+---
-   |   | X 
----+---+---
-   | X |   
-
-Player X 
-
- X | X |   
----+---+---
-   |   | X 
----+---+---
-   | X |   
+   |   |   
 
 Player X WON!
 
  X | X | X 
 ---+---+---
-   |   | X 
+   |   |   
 ---+---+---
-   | X |   
+   |   |   
 ```
 
 #### Alternating players
@@ -505,7 +489,7 @@ The end result is a (somewhat) realisic looking game of tic-tac-toe where the pl
 ```text
 Player O 
 
-   | O |   
+ O |   |   
 ---+---+---
    |   |   
 ---+---+---
@@ -513,7 +497,7 @@ Player O
 
 Player X 
 
-   | O | X 
+ O | X |   
 ---+---+---
    |   |   
 ---+---+---
@@ -521,59 +505,43 @@ Player X
 
 Player O 
 
-   | O | X 
+ O | X |   
 ---+---+---
-   |   | O 
+ O |   |   
 ---+---+---
    |   |   
 
 Player X 
 
-   | O | X 
+ O | X | X 
 ---+---+---
-   |   | O 
+ O |   |   
 ---+---+---
- X |   |   
+   |   |   
 
 Player O 
 
-   | O | X 
+ O | X | X 
 ---+---+---
-   |   | O 
+ O | O |   
 ---+---+---
- X |   | O 
+   |   |   
 
 Player X 
 
-   | O | X 
+ O | X | X 
 ---+---+---
-   |   | O 
+ O | O | X 
 ---+---+---
- X | X | O 
+   |   |   
 
-Player O 
+Player O WON!
 
+ O | X | X 
+---+---+---
  O | O | X 
 ---+---+---
    |   | O 
----+---+---
- X | X | O 
-
-Player X 
-
- O | O | X 
----+---+---
- X |   | O 
----+---+---
- X | X | O 
-
-DRAW!
-
- O | O | X 
----+---+---
- X | O | O 
----+---+---
- X | X | O 
 ```
 
 ## Component Types
@@ -586,7 +554,7 @@ Component types can be:
 *   [**Junction**](#component-junction): A many to many connector which can manage priorities of incoming data.
 *   [**Buffer / Regulator**](#component-buffer--regulator): Stores an infinite amount of messages / Regulates the amount of messages
 
-<sub>**Note:** There are diagrams in this section, the legend for this is shown at [#component-diagram-legend](#component-diagram-legend)</sub>
+<sub>**Note:** There are diagrams in this section, the legend for this is shown at [Component Diagram Legend in the Appendix](#component-diagram-legend)</sub>
 
 ### Component: Faucet
 

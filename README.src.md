@@ -284,7 +284,7 @@ Component types can be:
  * [**Junction**](#component-junction): A many to many connector which can manage priorities of incoming data.
  * [**Buffer / Regulator**](#component-buffer--regulator): Stores an infinite amount of messages / Regulates the amount of messages
 
-<sub>**Note:** There are diagrams in this section, the legend for this is shown at [#component-diagram-legend](#component-diagram-legend)</sub>
+<sub>**Note:** There are diagrams in this section, the legend for this is shown at [Component Diagram Legend in the Appendix](#component-diagram-legend)</sub>
 
 ### Component: Faucet
 
