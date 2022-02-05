@@ -268,7 +268,6 @@ pub fn quick_add_connection_set(connection_set: &str, ds: &mut DeserializedConne
                 if ((i == 0) || (i == len - 1)) && dst.component_type() == &ComponentType::Junction {
                     conn_set = None
                 }
-                println!("CS{}: {:?}", i, conn_set);
                 *c = set_connection_set(dst, conn_set);
             }
         },
