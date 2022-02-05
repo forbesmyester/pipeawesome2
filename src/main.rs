@@ -324,6 +324,10 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
 
 
         match (base_options, &coll_subcomm_str[..]) {
+            (_, []) => {
+                eprintln!("Run with --help for assistance");
+                std::process::exit(1);
+            },
             (_, ["process"]) => {
                 Ok(UserRequest::Process { config_format: get_config_format(first_sub_command)?, config_in: get_config_in(first_sub_command) })
             },
