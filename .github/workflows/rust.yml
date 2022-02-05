@@ -1,0 +1,70 @@
+name: Rust
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+
+  unix_like:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build
+      run: cargo build --verbose --release
+    - name: Release
+      id: release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: "Release ${{ github.ref }}: ${{ matrix.os }}"
+        draft: true
+        prerelease: true
+    - name: Upload Release Asset
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.release.outputs.upload_url }}
+        asset_path: target/release/pipeawesome2
+        asset_name: pipeawesome2-${{ matrix.os }}
+        asset_content_type: application/x-executable
+
+
+  windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build
+      run: cargo build --verbose --release
+    - name: Release
+      id: release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: "Release ${{ github.ref }}: windows-latest: MSHTML"
+        draft: true
+        prerelease: true
+    - name: Upload Release Asset
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.release.outputs.upload_url }}
+        asset_path: target/release/pipeawesome2.exe
+        asset_name: pipeawesome2.exe
+        asset_content_type: application/x-executable
