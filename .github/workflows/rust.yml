@@ -18,8 +18,14 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
     - uses: actions/checkout@v2
+    - name: Libs
+      run:  sudo apt-get install -y bats || true
     - name: Build
       run: cargo build --verbose --release
+    - name: Tests
+      run: cargo test
+    - name: Bats
+      run: if bats --help; then export PATH=$PATH:./target/release; bats ./bats-tests/pipeawesome.bats; else true; fi
     - name: Release
       id: release
       uses: actions/create-release@v1
