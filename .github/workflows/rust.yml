@@ -2,9 +2,9 @@ name: Rust
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -40,7 +40,6 @@ jobs:
         asset_path: target/release/pipeawesome2
         asset_name: pipeawesome2-${{ matrix.os }}
         asset_content_type: application/x-executable
-
 
   windows:
     runs-on: windows-latest
