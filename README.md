@@ -1,5 +1,7 @@
 # Pipeawesome 2
 
+[![Rust](https://github.com/forbesmyester/pipeawesome2/actions/workflows/rust.yml/badge.svg)](https://github.com/forbesmyester/pipeawesome2/actions/workflows/rust.yml)
+
 ## Table of contents
 
 *   [As my mum would say... accusingly... "WHAT did YOU do?!?!?!"](#as-my-mum-would-say-accusingly-what-did-you-do)
@@ -283,9 +285,9 @@ The output from this will be the same as previous but with an extra `O` somewher
 ```text
 Player O 
 
- O |   | X 
+   |   | X 
 ---+---+---
-   | O |   
+ O | O |   
 ---+---+---
    |   | X 
 ```
@@ -349,11 +351,11 @@ The big change is that there are now multiple keys / connections sets / lines wi
 Running this code results in a grid where either an `O` or `X` could be anywhere on the grid:
 
 ```text
-Player X 
+Player O 
 
- X |   |   
----+---+---
    |   |   
+---+---+---
+   | O |   
 ---+---+---
    |   |   
 ```
@@ -412,27 +414,27 @@ Which could be visualized as:
 This configuration results in a non-thrilling game however as only one player ever gets a go!
 
 ```text
-Player X 
+Player O 
 
- X |   |   
----+---+---
    |   |   
 ---+---+---
-   |   |   
-
-Player X 
-
- X |   | X 
----+---+---
-   |   |   
+   | O |   
 ---+---+---
    |   |   
 
-Player X WON!
+Player O 
 
- X | X | X 
+   |   |   
+---+---+---
+ O | O |   
 ---+---+---
    |   |   
+
+Player O WON!
+
+   |   |   
+---+---+---
+ O | O | O 
 ---+---+---
    |   |   
 ```
@@ -489,59 +491,43 @@ The end result is a (somewhat) realisic looking game of tic-tac-toe where the pl
 ```text
 Player O 
 
- O |   |   
----+---+---
    |   |   
+---+---+---
+   | O |   
 ---+---+---
    |   |   
 
 Player X 
 
- O | X |   
----+---+---
    |   |   
+---+---+---
+ X | O |   
 ---+---+---
    |   |   
 
 Player O 
 
- O | X |   
+   |   | O 
 ---+---+---
- O |   |   
----+---+---
-   |   |   
-
-Player X 
-
- O | X | X 
----+---+---
- O |   |   
----+---+---
-   |   |   
-
-Player O 
-
- O | X | X 
----+---+---
- O | O |   
+ X | O |   
 ---+---+---
    |   |   
 
 Player X 
 
- O | X | X 
+   |   | O 
 ---+---+---
- O | O | X 
+ X | O | X 
 ---+---+---
    |   |   
 
 Player O WON!
 
- O | X | X 
----+---+---
- O | O | X 
----+---+---
    |   | O 
+---+---+---
+ X | O | X 
+---+---+---
+ O |   |   
 ```
 
 ## Component Types

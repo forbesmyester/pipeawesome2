@@ -1,5 +1,7 @@
 # Pipeawesome 2
 
+[![Rust](https://github.com/forbesmyester/pipeawesome2/actions/workflows/rust.yml/badge.svg)](https://github.com/forbesmyester/pipeawesome2/actions/workflows/rust.yml)
+
 ## Table of contents
 
 ## As my mum would say... accusingly... "WHAT did YOU do?!?!?!"
