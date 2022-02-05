@@ -274,6 +274,7 @@ async fn motion_read_buffer(rd: &mut (dyn AsyncRead + Unpin + Send), overflow: &
     loop {
 
         // It might already have been read into the buffer
+        #[allow(clippy::mut_range_bound)]
         for overflow_pos in start_from..overflow.overflow.len() {
             start_from = overflow_pos;
             if let Some(split_length) = is_split(overflow.overflow.split_at(overflow_pos).1, &overflow.split_at) {
@@ -452,7 +453,17 @@ pub async fn motion_worker(pull: &mut Pull, monitor: &mut MotionNotifications, p
     match &monitor.read {
         Some(m) => m.send(MonitorMessage::Read(0)).await,
         None => Ok(()),
-    }.map_err(|e| { MotionError::MonitorReadError( JourneySource { src: (*pull.journey().expect(&format!("motion::motion_worker monitor.read for pull {:?} had no journey", pull))).src }, Instant::now(), e ) })?;
+    }.map_err(|e| {
+        MotionError::MonitorReadError(
+            JourneySource {
+                src: (
+                    *pull.journey().unwrap_or_else(|| panic!("motion::motion_worker monitor.read for pull {:?} had no journey", pull))
+                    ).src
+            },
+            Instant::now(),
+            e
+        )
+    })?;
 
     let was_finished = data == IODataWrapper::Finished;
 
@@ -467,7 +478,7 @@ pub async fn motion_worker(pull: &mut Pull, monitor: &mut MotionNotifications, p
                 match motion_write(push, iodata).await {
                     Err(MotionError::OutputClosed(_, _, _, _)) => {
                         if breakable == Breakable::Finish {
-                            unfinished_push_count = unfinished_push_count - 1;
+                            unfinished_push_count -= 1;
                         }
                         Ok(())
                     },
@@ -479,7 +490,11 @@ pub async fn motion_worker(pull: &mut Pull, monitor: &mut MotionNotifications, p
 
     if let Some(m) = monitor.written.as_ref() {
         m.send(MonitorMessage::Wrote(0)).await
-            .map_err(|e| { MotionError::MonitorWriteError( *pull.journey().expect(&format!("motion::motion_worker monitor.read for pull {:?} had no journey", pull)), Instant::now(), e ) })?;
+            .map_err(|e| { MotionError::MonitorWriteError(
+                *pull.journey().unwrap_or_else(|| panic!("motion::motion_worker monitor.read for pull {:?} had no journey", pull)),
+                Instant::now(),
+                e
+            ) })?;
     }
 
     if unfinished_push_count == 0 {

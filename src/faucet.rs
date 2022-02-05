@@ -67,8 +67,8 @@ impl Connectable for Faucet {
             return Err(ConnectableAddOutputError::AlreadyAllocated(port));
         }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
-        let journey = Journey { src: src_id, dst: dst_id, breakable: breakable };
+        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
+        let journey = Journey { src: src_id, dst: dst_id, breakable };
         self.pull_journey = Some(journey.as_pull_journey());
         Ok(Pull::Receiver(journey.as_pull_journey(), stdout_io_reciever_channel))
     }

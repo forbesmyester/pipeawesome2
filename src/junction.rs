@@ -100,9 +100,9 @@ impl Junction {
         let mut any_read = false;
         let mut read_count = 0;
 
-        for (si_index, mut si) in self.stdin.iter_mut().enumerate() {
+        for (si_index, si) in self.stdin.iter_mut().enumerate() {
             let motion_one_results = junction_motion_worker(
-                &mut si,
+                si,
                 &mut self.stdout,
             ).await?;
             read_count += motion_one_results.read_from.len();
@@ -141,7 +141,7 @@ impl Connectable for Junction {
 
     fn add_output(&mut self, _port: OutputPort, breakable: Breakable, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout.push(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
+        self.stdout.push(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
         Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, stdout_io_reciever_channel))
     }
 

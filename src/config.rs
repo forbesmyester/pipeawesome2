@@ -113,7 +113,7 @@ impl Connection {
             },
         }
     }
-    fn as_input_breakable(self, breakable: Breakable) -> Self {
+    fn convert_to_input_breakable(self, breakable: Breakable) -> Self {
         match self {
             Connection::MiddleConnection { component_type, component_name, mut input_port, output_port, connection_set } => {
                 input_port.breakable = breakable;
@@ -256,24 +256,64 @@ pub fn quick_add_connection_set(connection_set: &str, ds: &mut DeserializedConne
     match ds {
         DeserializedConnection::Connections(cs) => {
             let len = cs.len();
-            for i in 0..len {
+            for (i, c) in cs.iter_mut().enumerate() {
                 let mut dst = Connection::StartConnection {
                     component_type: ComponentType::Buffer,
                     component_name: "".to_owned(),
                     output_port: OutputPort::Exit,
                     connection_set: Some("".to_owned()),
                 };
-                std::mem::swap(&mut cs[i], &mut dst);
-                // dst = set_connection_set(cs[i], connection_set.to_owned())
+                std::mem::swap(c, &mut dst);
                 let mut conn_set = Some(connection_set.to_owned());
                 if ((i == 0) || (i == len - 1)) && dst.component_type() == &ComponentType::Junction {
                     conn_set = None
                 }
-                cs[i] = set_connection_set(dst, conn_set);
+                println!("CS{}: {:?}", i, conn_set);
+                *c = set_connection_set(dst, conn_set);
             }
         },
         DeserializedConnection::JoinString(_) => {},
     }
+}
+
+
+#[test]
+fn test_quick_add_connection_set() {
+
+    let mut ds1 = DeserializedConnection::Connections(vec![
+        Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+        Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
+        Connection::MiddleConnection { component_type: ComponentType::Junction, component_name: "junc".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
+    ]);
+
+    quick_add_connection_set("bob", &mut ds1);
+
+    assert_eq!(
+        ds1,
+        DeserializedConnection::Connections(vec![
+            Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: Some("bob".to_string()) },
+            Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: Some("bob".to_string()) },
+            Connection::MiddleConnection { component_type: ComponentType::Junction, component_name: "junc".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
+        ])
+    );
+
+    let mut ds2 = DeserializedConnection::Connections(vec![
+        Connection::StartConnection { component_type: ComponentType::Junction, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+        Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
+        Connection::MiddleConnection { component_type: ComponentType::Drain, component_name: "junc".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
+    ]);
+
+    quick_add_connection_set("bob", &mut ds2);
+
+    assert_eq!(
+        ds2,
+        DeserializedConnection::Connections(vec![
+            Connection::StartConnection { component_type: ComponentType::Junction, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+            Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: Some("bob".to_string()) },
+            Connection::MiddleConnection { component_type: ComponentType::Drain, component_name: "junc".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: Some("bob".to_string()) },
+        ])
+    );
+
 }
 
 
@@ -433,7 +473,7 @@ impl Config {
                             Connection::MiddleConnection { component_type, component_name, .. } => (component_type, component_name),
                             Connection::StartConnection { component_type, component_name, .. } => (component_type, component_name),
                         };
-                        acc.insert((&cn.0, &cn.1));
+                        acc.insert((cn.0, cn.1));
                     }
                     acc
                 }
@@ -841,7 +881,7 @@ pub fn load_connection_from_string(s: &str) -> Result<Vec<Connection>, ParseErro
         match pc {
             ParserConnection::Connection(x) => {
                 if let Some(breakable) = breakable {
-                    acc.push(x.as_input_breakable(breakable));
+                    acc.push(x.convert_to_input_breakable(breakable));
                 } else {
                     acc.push(x);
                 }

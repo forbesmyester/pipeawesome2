@@ -194,15 +194,15 @@ impl Waiter {
     fn incr_id(&mut self, component_type: ComponentType, name: String) -> usize {
         self.component_type_name_to_id_reverse.insert(self.id, (component_type, name.clone()));
         let hm = self.component_type_name_to_id.get_mut(&component_type).unwrap();
-        let inner_entry = hm.entry(name.clone());
+        let inner_entry = hm.entry(name);
         inner_entry.or_insert(self.id);
-        self.id = self.id + 1;
+        self.id += 1;
         self.id - 1
     }
 
 
     fn get_id(&self, component_type: &ComponentType, component_name: &str) -> Option<usize> {
-        self.component_type_name_to_id.get(component_type).map(|hm| hm.get(component_name).map(|v| *v)).flatten()
+        self.component_type_name_to_id.get(component_type).map(|hm| hm.get(component_name).copied()).flatten()
     }
 
 
@@ -464,13 +464,13 @@ pub fn get_waiter(mut config: Config) -> Result<Waiter, String> {
         match component_type {
             ComponentType::Faucet => {
                 // TODO: Figure out how to get this in...
-                let faucet = Faucet::new(config.faucet.get(&component_name).map(|t| t.source.clone()).unwrap_or("".to_string()));
+                let faucet = Faucet::new(config.faucet.get(&component_name).map(|t| t.source.clone()).unwrap_or_else(|| "".to_string()));
                 w.add_faucet(component_name.to_string(), faucet);
                 Ok(id)
             },
             ComponentType::Drain => {
                 // TODO: Figure out how to get this in...
-                w.add_drain(component_name.to_string(), Drain::new(config.drain.get(&component_name).map(|s| s.destination.clone()).unwrap_or("".to_string())));
+                w.add_drain(component_name.to_string(), Drain::new(config.drain.get(&component_name).map(|s| s.destination.clone()).unwrap_or_else(|| "".to_string())));
                 Ok(id)
             },
             ComponentType::Regulator => {

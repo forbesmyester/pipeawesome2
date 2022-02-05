@@ -55,7 +55,7 @@ impl <E: IntoIterator<Item = (K, V)>,
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Err));
                 }
                 let (child_stdout_push_channel, chan_rx) = bounded(1);
-                self.stderr = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
+                self.stderr = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
                 Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, chan_rx))
             },
             OutputPort::Exit => {
@@ -63,7 +63,7 @@ impl <E: IntoIterator<Item = (K, V)>,
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Exit));
                 }
                 let (child_exit_status_push_channel, chan_rx) = bounded(1);
-                self.exit_status = Some((Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_exit_status_push_channel));
+                self.exit_status = Some((Journey { src: src_id, dst: dst_id, breakable }, child_exit_status_push_channel));
                 Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, chan_rx))
             },
             OutputPort::Out => {
@@ -71,7 +71,7 @@ impl <E: IntoIterator<Item = (K, V)>,
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Out));
                 }
                 let (child_stdout_push_channel, chan_rx) = bounded(1);
-                self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
+                self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
                 Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, chan_rx))
             }
         }

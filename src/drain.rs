@@ -41,7 +41,7 @@ impl Connectable for Drain {
         if unused_priority != 0 {
             return Err(ConnectableAddInputError::UnsupportedPriority(unused_priority));
         }
-        if !self.stdin.is_none() {
+        if self.stdin.is_some() {
             return Err(ConnectableAddInputError::AlreadyAllocated);
         }
         self.stdin = Some(pull);

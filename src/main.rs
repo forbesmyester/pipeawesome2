@@ -18,8 +18,8 @@ use clap::{ App, Arg };
 
 #[derive(Debug)]
 enum ConfigFormat {
-    JSON,
-    YAML,
+    Json,
+    Yaml,
 }
 
 fn get_clap_app() -> App<'static, 'static> {
@@ -258,19 +258,19 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
         subcommand_inquire(CollectedSubcommands { subcommands: vec![], final_sub_command: matches })
     }
 
-    fn get_config_format<'a>(first_sub_command: Option<&'a ArgMatches>) -> Result<ConfigFormat, String> {
+    fn get_config_format(first_sub_command: Option<&ArgMatches>) -> Result<ConfigFormat, String> {
         let first = first_sub_command.map(|sc1| sc1.value_of("config").or(Some("-"))).flatten();
 
         let fmt = match first_sub_command.map(|sc1| sc1.value_of("config_format").or(first)).flatten() {
-            Some("yaml") => Some(ConfigFormat::YAML),
-            Some("json") => Some(ConfigFormat::JSON),
-            Some(filename) if filename.ends_with(".yaml") => Some(ConfigFormat::YAML),
-            Some(filename) if filename.ends_with(".yml") => Some(ConfigFormat::YAML),
-            Some(filename) if filename.ends_with(".json") => Some(ConfigFormat::JSON),
+            Some("yaml") => Some(ConfigFormat::Yaml),
+            Some("json") => Some(ConfigFormat::Json),
+            Some(filename) if filename.ends_with(".yaml") => Some(ConfigFormat::Yaml),
+            Some(filename) if filename.ends_with(".yml") => Some(ConfigFormat::Yaml),
+            Some(filename) if filename.ends_with(".json") => Some(ConfigFormat::Json),
             _ => None
         };
 
-        fmt.ok_or("Could not figure out configuration format".to_string())
+        fmt.ok_or_else(|| "Could not figure out configuration format".to_string())
     }
 
     fn get_standard_config_opts<'a>(first_sub_command: Option<&'a ArgMatches>, second_sub_command: Option<&'a ArgMatches>, second_name: Option<&str>) -> Result<UserConfigOptionBase, String> {
@@ -469,8 +469,8 @@ fn read_config_as_str(config_in: &str) -> Result<String, String> {
 
 fn parse_config_str(fmt: &ConfigFormat, config_str: &str) -> Result<Config, String> {
     match fmt {
-        ConfigFormat::JSON => serde_json::from_str::<Config>(config_str).map_err(|e| format!("Could not parse config ({})", e)),
-        ConfigFormat::YAML => serde_yaml::from_str::<Config>(config_str).map_err(|e| format!("Could not parse config ({})", e)),
+        ConfigFormat::Json => serde_json::from_str::<Config>(config_str).map_err(|e| format!("Could not parse config ({})", e)),
+        ConfigFormat::Yaml => serde_yaml::from_str::<Config>(config_str).map_err(|e| format!("Could not parse config ({})", e)),
     }
 }
 
@@ -543,10 +543,7 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
         Ok(UserRequest::Process { config_in, config_format }) => {
             let mut config = read_config(&config_format, &config_in)?;
             let errs = Config::lint(&mut config).into_iter()
-                .filter(|lint_err| match lint_err {
-                    ConfigLintWarning::InConfigButMissingFlowConnection { .. } => false,
-                    _ => true,
-                })
+                .filter(|lint_err| !matches!(lint_err, ConfigLintWarning::InConfigButMissingFlowConnection { .. }))
                 .map(|c| c.to_string()).collect::<Vec<String>>();
             if errs.is_empty() {
                 return Ok(config).map(UserResponse::Process);
@@ -556,10 +553,7 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
         Ok(UserRequest::Graph { mode, config_in, config_format }) => {
             let mut config = read_config(&config_format, &config_in)?;
             let errs = Config::lint(&mut config).into_iter()
-                .filter(|lint_err| match lint_err {
-                    ConfigLintWarning::InConfigButMissingFlowConnection { .. } => false,
-                    _ => true,
-                })
+                .filter(|lint_err| !matches!(lint_err, ConfigLintWarning::InConfigButMissingFlowConnection { .. }))
                 .map(|c| c.to_string()).collect::<Vec<String>>();
             if errs.is_empty() {
                 return Ok(config).map(|config| { UserResponse::Graph((config, mode)) });
@@ -664,7 +658,7 @@ fn main() {
             for s in ss {
                 eprintln!(" * {}", s);
             }
-            eprintln!("");
+            eprintln!();
             std::process::exit(1);
         }
     }

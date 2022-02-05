@@ -32,7 +32,7 @@ impl Connectable for Buffer {
     fn add_output(&mut self, port: OutputPort, breakable: Breakable, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
         if self.stdout.is_some() { return Err(ConnectableAddOutputError::AlreadyAllocated(port)); }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
+        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
         Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, stdout_io_reciever_channel))
     }
 
@@ -87,7 +87,7 @@ impl StartableControl for Buffer {
         let stdout = std::mem::take(&mut self.stdout).ok_or(MotionError::NoneError)?;
 
         let push_a = Push::Sender(
-            Journey { src: 0, dst: 0, breakable: stdout.journey().ok_or(MotionError::NoneError)?.breakable.clone()},
+            Journey { src: 0, dst: 0, breakable: stdout.journey().ok_or(MotionError::NoneError)?.breakable },
             unbounded_snd
         );
         let pull_b = Pull::Receiver(

@@ -20,7 +20,6 @@ pub struct Regulator {
 
 impl Regulator {
 
-
     pub fn new() -> Regulator {
         Regulator {
             started: false,
@@ -50,6 +49,13 @@ impl Regulator {
 }
 
 
+impl Default for Regulator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
 impl Connectable for Regulator {
 
     fn add_output(&mut self, port: OutputPort, breakable: Breakable, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
@@ -60,8 +66,8 @@ impl Connectable for Regulator {
             return Err(ConnectableAddOutputError::AlreadyAllocated(port));
         }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable: breakable.clone() }, child_stdout_push_channel));
-        let journey = Journey { src: src_id, dst: dst_id, breakable: breakable };
+        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
+        let journey = Journey { src: src_id, dst: dst_id, breakable };
         Ok(Pull::Receiver(journey.as_pull_journey(), stdout_io_reciever_channel))
     }
 

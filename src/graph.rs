@@ -34,15 +34,12 @@ pub fn convert_connection_to_graph_connection<'a>(mut acc: Vec<GraphConnection<'
             Connection::StartConnection { component_type, component_name, output_port, connection_set } => Some((component_type, component_name, Some(output_port), connection_set)),
             Connection::EndConnection { component_type, component_name, connection_set, .. } => Some((component_type, component_name, None, connection_set)),
         };
-        match (src, dst) {
-            (Some((src_0, src_1, Some(src_2), connection_set)), Some(dst)) => {
-                r.push(GraphConnection {
-                    src: (src_0, src_1, connection_set),
-                    via: src_2,
-                    dst: (dst.0, dst.1, &dst.3),
-                });
-            },
-            _ => (),
+        if let (Some((src_0, src_1, Some(src_2), connection_set)), Some(dst)) = (src, dst) {
+            r.push(GraphConnection {
+                src: (src_0, src_1, connection_set),
+                via: src_2,
+                dst: (dst.0, dst.1, dst.3),
+            });
         }
         src = match dst {
             Some((dst_type, dst_name, Some(output_port), connection_set)) => Some((dst_type, dst_name, Some(output_port), connection_set)),
@@ -69,7 +66,7 @@ pub fn convert_connection_components_fold<'a>(mut acc: HashMap<&'a ComponentType
             .and_modify(|x| {
                 x.push(comp.1);
             })
-            .or_insert(vec![comp.1]);
+            .or_insert_with(|| vec![comp.1]);
     }
 
 
@@ -181,7 +178,7 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
                     )
                 });
 
-                acc.entry(get_connection_set_name(connection_set_graph_connection, component_type, component_name)).or_insert(vec![]).push(
+                acc.entry(get_connection_set_name(connection_set_graph_connection, component_type, component_name)).or_insert_with(Vec::new).push(
                     Node::new(
                         node_id(component_type, component_name),
                         vec![attr!("label", label), attr!("style", "filled"), get_node_shape(component_type), get_node_color(component_type)]
@@ -229,8 +226,8 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
             else if connection_set_with_drain.contains(&connection_set) { "max" }
             else { "same" };
         let mut stmts = vec![Stmt::Attribute(attr!("label", title)),Stmt::Attribute(attr!("rank", rank))];
-        let stmts_to_add: Vec<Stmt> = nodes.into_iter().map(|gc| Stmt::Node(gc)).collect();
-        if connection_set == "" {
+        let stmts_to_add: Vec<Stmt> = nodes.into_iter().map(Stmt::Node).collect();
+        if connection_set.is_empty() {
             acc.append(stmts_to_add);
             return acc
         }
@@ -255,7 +252,7 @@ pub fn get_diagram(components: HashMap<&ComponentType, Vec<&str>>, connections: 
             lbl = "\"\"".to_string()
         }
         Stmt::Edge(Edge {
-            ty: EdgeTy::Pair(Vertex::N(node_id(&gc.src.0, &gc.src.1)), Vertex::N(node_id(&gc.dst.0, &gc.dst.1))),
+            ty: EdgeTy::Pair(Vertex::N(node_id(gc.src.0, gc.src.1)), Vertex::N(node_id(gc.dst.0, gc.dst.1))),
             attributes: vec![attr!("label", lbl)]
         })
     }).collect();
