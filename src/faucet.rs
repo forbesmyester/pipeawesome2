@@ -284,7 +284,7 @@ fn do_stuff() {
         assert_eq!(my_timings.index, 2);
         assert_eq!(my_timings.count, 6);
         assert!(my_timings.duration > Duration::from_millis(90));
-        assert!(my_timings.duration < Duration::from_millis(110));
+        assert!(my_timings.duration < Duration::from_millis(150));
 
         MotionResult::Ok(1)
     }
