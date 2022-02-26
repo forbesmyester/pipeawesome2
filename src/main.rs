@@ -60,7 +60,7 @@ fn get_clap_app() -> App<'static, 'static> {
 
     App::new("Pipeawesome")
         .author("Matthew Forrester, githib.com@speechmarks.com")
-        .version("0.0.0")
+        .version(clap::crate_version!())
         .about("Like UNIX pipes, but on sterroids")
 
         .subcommand(
