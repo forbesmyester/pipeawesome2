@@ -151,7 +151,6 @@ impl <E: IntoIterator<Item = (K, V)>,
 
         assert!(!self.launched);
 
-
         let mut child_builder = aip::Command::new(&self.command);
 
         self.environment_configure(&mut child_builder);
@@ -179,7 +178,11 @@ impl <E: IntoIterator<Item = (K, V)>,
             false => { child_builder.stderr(async_std::process::Stdio::null()); }
         }
 
-        let mut child = child_builder.spawn().unwrap();
+        let mut child = child_builder.spawn().map_err(
+            |_c| {
+                MotionError::LaunchSpawnError(self.command.as_ref().to_str().map(|s| s.to_owned()))
+            }
+        ).unwrap();
 
         let child_stdin_push = match std::mem::take(&mut child.stdin) {
             Some(stdin) => {

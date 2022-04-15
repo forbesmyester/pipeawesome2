@@ -153,6 +153,7 @@ pub enum MotionError {
     OutputClosed(Journey, Instant, OutputClosedReason, IOData),
     MonitorReadError(JourneySource, Instant, SendError<MonitorMessage>),
     MonitorWriteError(PullJourney, Instant, SendError<MonitorMessage>),
+    LaunchSpawnError(Option<String>),
     NoneError,
 }
 
@@ -169,6 +170,12 @@ impl std::fmt::Display for MotionError {
             MotionError::OutputClosed(_, _, OutputClosedReason::ChannelClosed, _) => write!(f, "MotionError::OutputClosed: ChannelClosed"),
             MotionError::MonitorReadError(_, _, a) => write!(f, "MotionError::MonitorReadError: {}", a),
             MotionError::MonitorWriteError(_, _, a) => write!(f, "MotionError::MonitorWriteError: {}", a),
+            MotionError::LaunchSpawnError(cmd) => {
+                match cmd {
+                    Some(cmd) => write!(f, "MotionError::LaunchSpawnError: Could not run program {}", cmd),
+                    None => write!(f, "MotionError::LaunchSpawnError: Could not run program UNKNOWN (could not represent in UTF-8)"),
+                }
+            }
             MotionError::NoneError => write!(f, "MotionError::NoneError: None Error"),
         }
     }
@@ -186,6 +193,7 @@ impl MotionError {
             MotionError::OutputClosed(_, i, ..) => Some(i),
             MotionError::MonitorReadError(_, i, ..) => Some(i),
             MotionError::MonitorWriteError(_, i, ..) => Some(i),
+            MotionError::LaunchSpawnError(_) => None,
             MotionError::NoneError => None
         }
     }
@@ -201,6 +209,7 @@ impl MotionError {
             MotionError::OutputClosed(j, ..) => Some(j),
             MotionError::MonitorReadError(..) => None,
             MotionError::MonitorWriteError(_j, ..) => None,
+            MotionError::LaunchSpawnError(_) => None,
             MotionError::NoneError => None
         }
     }
@@ -216,6 +225,7 @@ impl MotionError {
             MotionError::OutputClosed(_j, ..) => None,
             MotionError::MonitorReadError(..) => None,
             MotionError::MonitorWriteError(j, ..) => Some(j),
+            MotionError::LaunchSpawnError(_) => None,
             MotionError::NoneError => None
         }
     }
@@ -231,6 +241,7 @@ impl MotionError {
             MotionError::OutputClosed(Journey { src, .. }, ..) => Some(src),
             MotionError::MonitorReadError(JourneySource { src }, ..) => Some(src),
             MotionError::MonitorWriteError(PullJourney { src, .. }, ..) => Some(src),
+            MotionError::LaunchSpawnError(_) => None,
             MotionError::NoneError => None
         }
     }
