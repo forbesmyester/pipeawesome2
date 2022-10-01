@@ -13,16 +13,16 @@ jobs:
         os: [ubuntu-20.04, macos-latest, windows-latest]
         include:
           - os: ubuntu-20.04
-            build_name: pipeawesome2
-            upload_name: pipeawesome2
+            build_name: pa2
+            upload_name: pa2
             os_name: Ubuntu 20.04
           - os: macos-latest
-            build_name: pipeawesome2
-            upload_name: pipeawesome2
+            build_name: pa2
+            upload_name: pa2
             os_name: MacOS
           - os: windows-latest
-            build_name: pipeawesome2.exe
-            upload_name: pipeawesome2.exe
+            build_name: pa2.exe
+            upload_name: pa2.exe
             os_name: Windows
     steps:
       - uses: actions/checkout@v2
