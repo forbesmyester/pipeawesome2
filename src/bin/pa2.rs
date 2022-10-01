@@ -52,9 +52,12 @@ fn get_clap_app() -> App<'static, 'static> {
     }
 
     fn config_format<'a>() -> Arg<'a, 'a> {
-        Arg::with_name("config-format")
+        Arg::with_name("format")
+            .long("format")
             .help("The format of the configuration data")
             .required(false)
+            .takes_value(true)
+            .default_value("yaml")
             .possible_values(&["yaml", "json"])
     }
 
@@ -260,8 +263,7 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
 
     fn get_config_format(first_sub_command: Option<&ArgMatches>) -> Result<ConfigFormat, String> {
         let first = first_sub_command.map(|sc1| sc1.value_of("config").or(Some("-"))).flatten();
-
-        let fmt = match first_sub_command.map(|sc1| sc1.value_of("config_format").or(first)).flatten() {
+        let fmt = match first_sub_command.map(|sc1| sc1.value_of("format").or(first)).flatten() {
             Some("yaml") => Some(ConfigFormat::Yaml),
             Some("json") => Some(ConfigFormat::Json),
             Some(filename) if filename.ends_with(".yaml") => Some(ConfigFormat::Yaml),
@@ -320,7 +322,6 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
 
         let coll_subcomm_str: Vec<&str> = collected_subcommands.subcommands.iter().map(|x| x.1).collect();
         let last_sub_command: Option<&ArgMatches> = collected_subcommands.subcommands.iter().map(|x| x.0).last();
-
 
 
         match (base_options, &coll_subcomm_str[..]) {
