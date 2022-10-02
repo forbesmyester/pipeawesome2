@@ -972,3 +972,197 @@ fn test_lint() {
     );
 
 }
+
+
+#[test]
+fn test_add_junctions_for_multi_in() {
+
+    use std::iter::FromIterator;
+
+    let input: BTreeMap::<String, DeserializedConnection> = BTreeMap::<_, _>::from_iter([
+        (
+            "main".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+                Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Drain, component_name: "sinkhole".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "ynbhz".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+                Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Drain, component_name: "sinkhole".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        )
+    ]);
+
+    fn collect_connection_names<'a>(connection: &'a BTreeMap<String, DeserializedConnection>) -> HashSet<&'a String> {
+        connection.keys().collect()
+    }
+
+    fn generate_new_key(original_key: &String, existing_keys: HashSet<&String>) -> String {
+        let mut i = 1;
+        loop {
+            let new_key = format!("{}_{}", original_key, i);
+            if !existing_keys.contains(&new_key) {
+                return new_key;
+            }
+            i = i + 1;
+        }
+    }
+
+    enum ApartIterator {
+        Single(Connection),
+        Double(Connection, Connection)
+    }
+
+    fn break_apart_chunker(mut acc: Vec<ApartIterator>, item: Connection) -> Vec<ApartIterator> {
+
+        let mut to_add = match acc.pop() {
+            None => vec![ApartIterator::Single(item)],
+            Some(ApartIterator::Single(first_item)) => {
+                vec![ApartIterator::Double(first_item, item)]
+            },
+            Some(ApartIterator::Double(first_item, second_item)) => {
+
+                let new_start = second_item.clone();
+
+                vec![
+                    ApartIterator::Double(first_item, second_item),
+                    ApartIterator::Double(new_start, item),
+                ]
+            }
+        };
+        acc.append(&mut to_add);
+        acc
+
+    }
+
+    fn break_apart_mapper(item: ApartIterator) -> ApartIterator {
+
+        match item {
+            ApartIterator::Single(_) => { panic!("break_apart_mapper encountered None"); },
+            ApartIterator::Double(start, end) => {
+                let new_end = match end {
+                    Connection::EndConnection { component_type, component_name, input_port, connection_set } => {
+                        Connection::EndConnection { component_type, component_name, input_port, connection_set }
+                    },
+                    Connection::MiddleConnection { component_type, component_name, input_port, connection_set, ..  } => {
+                        Connection::EndConnection { component_type, component_name, input_port, connection_set }
+                    },
+                    Connection::StartConnection { .. } => {
+                        panic!("Last item in ApartIterator::Double is a StartConnection");
+                    }
+                };
+
+                let new_start = match start {
+                    Connection::EndConnection {..} => {
+                        panic!("Last item in ApartIterator::Double is a EndConnection");
+                    },
+                    Connection::MiddleConnection { component_type, component_name , output_port, connection_set, .. } => {
+                        Connection::StartConnection { component_type, component_name, output_port, connection_set }
+                    },
+                    Connection::StartConnection { component_type, component_name, output_port, connection_set } => {
+                        Connection::StartConnection { component_type, component_name, output_port, connection_set }
+                    }
+                };
+
+                ApartIterator::Double(new_start, new_end)
+
+            },
+        }
+
+    }
+
+    fn apart_iterator_to_double_connection(ai: ApartIterator) -> DeserializedConnection {
+        match ai {
+            ApartIterator::Single(_) => {
+                panic!("apart_iterator_to_double_connection encountered ApartIterator::Single");
+            },
+            ApartIterator::Double(first_item, second_item) => {
+                DeserializedConnection::Connections(vec![first_item, second_item])
+            }
+        }
+    }
+
+    fn break_apart(input: Vec<Connection>) -> Vec<DeserializedConnection> {
+        input
+            .into_iter()
+            .fold(vec![], break_apart_chunker)
+            .into_iter()
+            .map(break_apart_mapper)
+            .map(apart_iterator_to_double_connection).collect()
+    }
+
+
+    fn rebuild_junctions_folder(mut acc: BTreeMap<String, DeserializedConnection>, (item_k, item_v): (String, DeserializedConnection)) -> BTreeMap<String, DeserializedConnection> {
+        match item_v {
+            DeserializedConnection::JoinString(_) => { panic!("rebuild_joiner_folder encountered DeserializedConnection::JoinString"); }
+            DeserializedConnection::Connections(v) => {
+                let pairs = break_apart(v);
+                for p in pairs {
+                    let new_key = generate_new_key(&item_k, collect_connection_names(&acc));
+                    acc.insert(new_key, p);
+                }
+            }
+        };
+        acc
+    }
+
+    let broken: Vec<DeserializedConnection> = vec![
+        DeserializedConnection::Connections(vec![
+            Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+            Connection::EndConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+        ]),
+        DeserializedConnection::Connections(vec![
+            Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, connection_set: None },
+            Connection::EndConnection { component_type: ComponentType::Drain, component_name: "sinkhole".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+        ])
+    ];
+
+    assert_eq!(
+        broken,
+        break_apart(vec![
+                    Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+                    Connection::MiddleConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
+                    Connection::EndConnection { component_type: ComponentType::Drain, component_name: "sinkhole".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+                ])
+    );
+
+    let expected: BTreeMap<String, DeserializedConnection> = BTreeMap::<_, _>::from_iter([
+        (
+            "main_1".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
+            ]),
+        ),
+        (
+            "main_2".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Drain, component_name: "sinkhole".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "ynbhz_1".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None },
+            ]),
+        ),
+        (
+            "ynbhz_2".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, connection_set: None },
+
+                Connection::EndConnection { component_type: ComponentType::Drain, component_name: "sinkhole".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        )
+    ]);
+
+    assert_eq!(expected, input.into_iter().fold(BTreeMap::new(), rebuild_junctions_folder));
+
+}

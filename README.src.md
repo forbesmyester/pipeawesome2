@@ -624,4 +624,7 @@ digraph G {
 }
 ```
 
+#### Editing Config via Command Line
+
+./target/debug/pipeawesome2 config --config examples/ls/pa.yaml launch --id l command  ls  | ./target/debug/pipeawesome2 config  --config=- --format=yaml connection --id z join 'l:ls|d:out'
 

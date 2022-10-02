@@ -10,14 +10,12 @@ pub enum Breakable {
     Terminate
 }
 
-#[derive(Copy, Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[derive(Copy, Debug, Eq, Hash, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputPort {
     Err,
     Out,
     Exit,
-    // Size,
-    // Overflow,
 }
 
 fn default_input_port_breakable() -> Breakable { Breakable::Terminate }

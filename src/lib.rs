@@ -14,3 +14,4 @@ pub mod fake_read;
 pub mod config;
 pub mod graph;
 pub mod connectable;
+pub mod config_manip;
