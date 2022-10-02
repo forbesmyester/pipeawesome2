@@ -62,8 +62,8 @@
 
 @test "pipeawesome dynmically-add-junctions" {
 
-    RESULT="$( pa2 process --config examples/ls/pa-dynamically-add-junctions.yml )"
-    EXPECTED=$( pa2 process --config examples/ls/pa.yaml )
+    RESULT="$( pa2 process --config examples/ls/pa-dynamically-add-junctions.yml | sort )"
+    EXPECTED=$( pa2 process --config examples/ls/pa.yaml | sort )
 
     echo "RESULT = $RESULT"
     echo "EXPECTED = $EXPECTED"
