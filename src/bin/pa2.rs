@@ -1,4 +1,5 @@
 use pipeawesome2::config::quick_add_connection_set;
+use pipeawesome2::config_manip::add_junctions;
 use pipeawesome2::waiter::Waiter;
 use pipeawesome2::waiter::WaiterError;
 use pipeawesome2::config::ComponentType;
@@ -10,8 +11,10 @@ use pipeawesome2::config::ConfigLintWarning;
 use pipeawesome2::config::DeserializedConnection;
 use pipeawesome2::config::load_connection_from_string;
 use pipeawesome2::config::Config;
+use pipeawesome2::config_manip::rebuild_pair_up_connections_folder;
 use clap::ArgMatches;
 use clap::SubCommand;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use clap::{ App, Arg };
 
@@ -547,6 +550,12 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
         },
         Ok(UserRequest::Process { config_in, config_format }) => {
             let mut config = read_config(&config_format, &config_in)?;
+            let mut read_config_connections = std::mem::take(&mut config.connection);
+            Config::convert_connections(&mut read_config_connections);
+            let paired_config_connections = read_config_connections.into_iter().fold(BTreeMap::new(), rebuild_pair_up_connections_folder);
+            let mut manipulated_connections = add_junctions(paired_config_connections);
+            std::mem::swap(&mut config.connection, &mut manipulated_connections);
+
             let errs = Config::lint(&mut config).into_iter()
                 .filter(|lint_err| !matches!(lint_err, ConfigLintWarning::InConfigButMissingFlowConnection { .. }))
                 .map(|c| c.to_string()).collect::<Vec<String>>();

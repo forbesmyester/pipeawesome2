@@ -52,6 +52,7 @@
 
     *   [Pipeawesome Graph Legend](#pipeawesome-graph-legend)
     *   [Component Diagram Legend](#component-diagram-legend)
+    *   [Editing Config via Command Line](#editing-config-via-command-line)
 
 ## As my mum would say... accusingly... "WHAT did YOU do?!?!?!"
 
@@ -752,3 +753,5 @@ You can draw a graph legend by running the command `./target/debug/pipeawesome2 
 This is the legend for diagrams shown in the [Component Types](#component-types) section.
 
 ![svg](readme-img/component-legends.svg)
+
+
