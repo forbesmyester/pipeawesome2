@@ -253,7 +253,7 @@ impl PartialEq for MotionError {
         match (&self, b) {
             (MotionError::RecvError(j, _, a), MotionError::RecvError(j2, _, a2)) => (a == a2) && (j == j2),
             (MotionError::WriteIOError(j, _, _a, b), MotionError::WriteIOError(j2, _, _a2, b2)) => (b == b2) && (j == j2),
-            (MotionError::ReadIOError(j, _, _a), MotionError::ReadIOError(j2, _, _a2)) => (j == j2),
+            (MotionError::ReadIOError(j, _, _a), MotionError::ReadIOError(j2, _, _a2)) => j == j2,
             (MotionError::SendError(j, _, a), MotionError::SendError(j2, _, a2)) => (j == j2) && (a == a2),
             (MotionError::MonitorReadError(j, _, a), MotionError::MonitorReadError(j2, _, a2)) => (j == j2) && (a == a2),
             (MotionError::MonitorWriteError(j, _, a), MotionError::MonitorWriteError(j2, _, a2)) => (j == j2) && (a == a2),
