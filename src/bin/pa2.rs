@@ -1,4 +1,5 @@
 use pipeawesome2::config::quick_add_connection_set;
+use pipeawesome2::config_io::{ read_config, ConfigFormat };
 use pipeawesome2::config_manip::add_junctions;
 use pipeawesome2::waiter::Waiter;
 use pipeawesome2::waiter::WaiterError;
@@ -18,12 +19,6 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use clap::{ App, Arg };
 
-
-#[derive(Debug)]
-enum ConfigFormat {
-    Json,
-    Yaml,
-}
 
 fn get_clap_app() -> App<'static, 'static> {
 
@@ -458,42 +453,6 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
     get_user_action(collect_subcommands(matches))
 
 }
-
-fn read_config_as_str(config_in: &str) -> Result<String, String> {
-
-    use std::io::prelude::*;
-    let mut buffer = String::new();
-
-    if config_in == "-" {
-        let mut stdin = std::io::stdin(); // We get `Stdin` here.
-        stdin.read_to_string(&mut buffer).map_err(|_x| "We could not read STDIN to get the config".to_string())?;
-        return Ok(buffer);
-    }
-
-    let mut f = std::fs::File::open(config_in).map_err(|_x| format!("We could not open the file '{}' to get the config", config_in))?;
-    f.read_to_string(&mut buffer).map_err(|_x| format!("We could not open the file '{}' to get the config", config_in))?;
-    Ok(buffer)
-}
-
-fn parse_config_str(fmt: &ConfigFormat, config_str: &str) -> Result<Config, String> {
-    match fmt {
-        ConfigFormat::Json => serde_json::from_str::<Config>(config_str).map_err(|e| format!("Could not parse config ({})", e)),
-        ConfigFormat::Yaml => serde_yaml::from_str::<Config>(config_str).map_err(|e| format!("Could not parse config ({})", e)),
-    }
-}
-
-fn read_config(fmt: &ConfigFormat, config_in: &str) -> Result<Config, String> {
-    result_flatten(read_config_as_str(config_in).map(|cas| parse_config_str(fmt, &cas)))
-}
-
-fn result_flatten<X>(x: Result<Result<X, String>, String>) -> Result<X, String> {
-    match x {
-        Ok(Ok(x)) => Ok(x),
-        Ok(Err(s)) => Err(s),
-        Err(s) => Err(s),
-    }
-}
-
 
 enum UserResponse {
     Config(Config),

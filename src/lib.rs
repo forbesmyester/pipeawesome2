@@ -15,3 +15,4 @@ pub mod config;
 pub mod graph;
 pub mod connectable;
 pub mod config_manip;
+pub mod config_io;
