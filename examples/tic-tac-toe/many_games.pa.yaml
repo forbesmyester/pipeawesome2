@@ -1,8 +1,8 @@
 connection:
   random_selection: "l:random_player | regulator:regulate_flow | j:turn"
-  player_o_branch: "j:turn | l:player_o_filter | l:player_o | j:draw"
-  player_x_branch: "j:turn | l:player_x_filter | l:player_x | j:draw"
-  last_draw: "j:draw | l:referee | j:loop | l:only_finishes | l:draw | d:output"
+  player_o_branch: "j:turn | l:player_o_filter | l:player_o | l:referee"
+  player_x_branch: "j:turn | l:player_x_filter | l:player_x | l:referee"
+  last_draw: "l:referee | j:loop | l:only_finishes | l:draw | d:output"
   looper: "j:loop | l:turn_swapper | buffer:reprocess | j:turn"
 drain:
   output: { destination: '-' }

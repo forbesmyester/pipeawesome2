@@ -28,7 +28,7 @@ Given a UNIX pipeline like `cat myfile | awk 'PAT { do something }' | grep '^goo
 
 This could be visualized like the following:
 
-```unixpipe diagram-dot svg readme-img/so-what-does-this-project-add-1.svg
+```unixpipe diagram-dot readme-img/so-what-does-this-project-add-1.svg
 digraph {
     rankdir = LR;
     cat -> awk -> grep2 -> awk2 -> sed -> sort
@@ -44,7 +44,7 @@ digraph {
 
 However it might be that you want to:
 
-```unixpipe diagram-dot svg readme-img/so-what-does-this-project-add-2.svg
+```unixpipe diagram-dot readme-img/so-what-does-this-project-add-2.svg
 digraph {
     rankdir = LR;
     cat -> awk -> grep1 -> do -> awk2 -> sed -> sort
@@ -105,16 +105,16 @@ I then wrote a Pipeawesome configuration file which wraps this:
 ```
 Which could be visualized as:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config ./examples/tic-tac-toe/draw.pa.yaml -d | diagram-dot svg readme-img/drawing-the-grid.svg
+```unixpipe ./target/debug/pa2 graph --config ./examples/tic-tac-toe/draw.pa.yaml -d | diagram-dot readme-img/drawing-the-grid.svg
 ```
 
-<sub>**NOTE**: I got Pipeawesome drew this graph by running `./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/draw.pa.yaml --diagram-only`.</sub>
+<sub>**NOTE**: I got Pipeawesome drew this graph by running `./target/debug/pa2 graph --config examples/tic-tac-toe/draw.pa.yaml --diagram-only`.</sub>
 
-<sub>**NOTE**: Using `./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/draw.pa.yaml --legend-only` will generate the graphs legend, this is common for all graphs and shown [in the appendix](#pipeawesome-graph-legend).</sub>
+<sub>**NOTE**: Using `./target/debug/pa2 graph --config examples/tic-tac-toe/draw.pa.yaml --legend-only` will generate the graphs legend, this is common for all graphs and shown [in the appendix](#pipeawesome-graph-legend).</sub>
 
 In Pipeawesome there are pipes, which connect different types of components. The components types here are `faucet`, `launch` and `drain` with the names of those components being `input`, `draw` and `output`. The names are just names, but they may need to be referenced elsewhere within the configuration file depending on the component type.
 
-You could execute this Pipeawesome configuration file with `echo 'O:::X::O::::X' | ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/draw.pa.yaml`
+You could execute this Pipeawesome configuration file with `echo 'O:::X::O::::X' | ./target/debug/pa2 process --config examples/tic-tac-toe/draw.pa.yaml`
 
 This is of course, a trivial and pointless example because you'd run awk directly, but it allows me to show you the Pipeawesome file format with minimal complexity.
 
@@ -187,14 +187,14 @@ The following configuration includes new code, but the configuration adds no con
 
 Which could be visualized as:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config ./examples/tic-tac-toe/have_a_go.pa.yaml -d | diagram-dot svg readme-img/having-a-go.svg
+```unixpipe ./target/debug/pa2 graph --config ./examples/tic-tac-toe/have_a_go.pa.yaml -d | diagram-dot readme-img/having-a-go.svg
 ```
 
-It can be executed with `echo 'O:::X::O::::X' | ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/have_a_go.pa.yaml`
+It can be executed with `echo 'O:::X::O::::X' | ./target/debug/pa2 process --config examples/tic-tac-toe/have_a_go.pa.yaml`
 
 The output from this will be the same as previous but with an extra `O` somewhere on the grid: 
 
-```unixpipe echo 'O:::X::O::::X' | ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/have_a_go.pa.yaml | wrap-as-lang text
+```unixpipe echo 'O:::X::O::::X' | ./target/debug/pa2 process --config examples/tic-tac-toe/have_a_go.pa.yaml | wrap-as-lang text
 ```
 
 <sub>**NOTE**: There is one extra `O` than in in the input, this was added by `player.awk`.</sub>
@@ -204,33 +204,31 @@ The output from this will be the same as previous but with an extra `O` somewher
 #### Code for generating the random player
 I figured out that `echo $((RANDOM % 2))::::::::: | sed "s/1/X/" | sed "s/0/O/"` is a single line BASH snippet for selecting a random first player.
 
-However this still means I have to let the selected player take that turn, which means I must explain what a **Junction** is.
-
-A **Junction** is a prioritized many-to-many connector. Anything that comes into any one of it's inputs will be sent to all of it's outputs.
-
-For more information please see [Component: Junction](#component-junction).
-
-After adding the junctions and supporting changes, the full configuration looks like this:
+The full configuration now looks like this:
 
 ```yaml file=./examples/tic-tac-toe/random_player.pa.yaml
 ```
 
 The graphs drawn by Pipeawesome now become much more interesting:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/random_player.pa.yaml -d | diagram-dot svg readme-img/code-for-generating-the-random-player.svg
+```unixpipe ./target/debug/pa2 graph --config examples/tic-tac-toe/random_player.pa.yaml -d | diagram-dot readme-img/code-for-generating-the-random-player.svg
 ```
 
 The changes are:
 
-The Faucet configuration has been completely removed (it is not required), in this situation, the initial message comes from `l:random_player`. I have also added / changed some Launch.
+The Faucet configuration has been completely removed (it is not required), in this situation as the initial message comes from `l:random_player`.
 
-The big change is that there are now multiple keys / connections sets / lines within `connection:`. You may notice that the `random_selection:` connection set writes to `junction:turn` but `junction:turn` is read in both the `player_o_branch` and `player_x_branch` connection sets, which in turn both write to `junction:draw`. The connection set names are completely arbitrary, though they must be unique.
+The `l:random_player` is only ran once, even though it occurs in two connections and it's output is sent to two
+
+The big change is that there are now multiple keys / connections sets / lines within `connection:`. You may notice that the `l:random_player` occurs twice in connection sets `player_o_branch` and `player_x_branch`. This does not mean it is ran twice as the `connection:` sections only desribe how things are connected to each other.
+
+A similar things is happening to `l:referee` although it actually has three references in `connection:`. In this configuration it is wrote to from both `l:player_o` and `l:player_x` and it's output is sent to `l:draw`.
 
 <sub>**NOTE**: It is important to know that both `l:player_o_filter` and `l:player_x_filter` both recieve the lines generated by `l:random player`. It is just the case that one of them always filters it out.</sub>
 
 Running this code results in a grid where either an `O` or `X` could be anywhere on the grid:
 
-```unixpipe ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/random_player.pa.yaml | wrap-as-lang text
+```unixpipe ./target/debug/pa2 process --config examples/tic-tac-toe/random_player.pa.yaml | wrap-as-lang text
 ```
 
 ### A complete game
@@ -242,21 +240,30 @@ To create the full game, there are two more things that need to happen:
 
 #### Multiple turns
 
-This is simple, all we need to do is take our previous configuration, add a junction between `launch:referee` and `launch:draw` and feed a new branch all the way back into `junction:turn`. The configuration now looks like:
+This ends up being quite simple, all we need to do is take our previous configuration, add take the output of `launch:referee` and feed it into both `l:player_o_filter` and `l:player_x_filter`, creating a loop. The configuration now looks like:
+
+This situation will be easier to explain by introducing a new component, a **Junction** between `l:random_player` and `l:player_o_filter` / `l:player_x_filter`.
+
+A **Junction** is a prioritized many-to-many connector. Anything that comes into any one of it's inputs will be sent to all of it's outputs.
+
+For more information please see [Component: Junction](#component-junction).
+
+After adding the junctions and supporting changes, the full configuration looks like this:
+
 
 ```yaml file=examples/tic-tac-toe/multiple_turns.pa.yaml -d
 ```
 
 Which could be visualized as:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/multiple_turns.pa.yaml -d | diagram-dot svg readme-img/multiple-turns.svg
+```unixpipe ./target/debug/pa2 graph --config examples/tic-tac-toe/multiple_turns.pa.yaml -d | diagram-dot readme-img/multiple-turns.svg
 ```
 
 <sub>**NOTE:** This graph is identical except the extra `junction:loop` and the line from it that goes all the way back to turn (connection set `looper`).</sub>
 
 This configuration results in a non-thrilling game however as only one player ever gets a go!
 
-```unixpipe ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/multiple_turns.pa.yaml | wrap-as-lang text
+```unixpipe ./target/debug/pa2 process --config examples/tic-tac-toe/multiple_turns.pa.yaml | wrap-as-lang text
 ```
 
 #### Alternating players
@@ -268,12 +275,12 @@ To get the player taking a turn to alternate we just need to put in some code th
 
 Which could be visualized as:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/pa.yaml -d | diagram-dot svg readme-img/alternating-players.svg
+```unixpipe ./target/debug/pa2 graph --config examples/tic-tac-toe/pa.yaml -d | diagram-dot readme-img/alternating-players.svg
 ```
 
 The end result is a (somewhat) realisic looking game of tic-tac-toe where the players take turns and someone wins (or the game ends in a draw):
 
-```unixpipe ./target/debug/pipeawesome2 process --config examples/tic-tac-toe/pa.yaml | wrap-as-lang text
+```unixpipe ./target/debug/pa2 process --config examples/tic-tac-toe/pa.yaml | wrap-as-lang text
 ```
 
 ## Component Types
@@ -290,7 +297,7 @@ Component types can be:
 
 ### Component: Faucet
 
-```unixpipe diagram-dot svg readme-img/component-faucet.svg
+```unixpipe diagram-dot readme-img/component-faucet.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -321,7 +328,7 @@ A Faucet is the main way to get data into Pipeawesome. Faucets have a property c
 
 ### Component: Launch
 
-```unixpipe diagram-dot svg readme-img/component-launch.svg
+```unixpipe diagram-dot readme-img/component-launch.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -399,7 +406,7 @@ The following are configurable:
 
 ### Component: Drain
 
-```unixpipe diagram-dot svg readme-img/component-drain.svg
+```unixpipe diagram-dot readme-img/component-drain.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -430,7 +437,7 @@ This is the normal way to get data out from Pipeawesome. the output can be sent 
 
 ### Component: Junction
 
-```unixpipe diagram-dot svg readme-img/component-junction.svg
+```unixpipe diagram-dot readme-img/component-junction.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -470,7 +477,7 @@ There's no configuration for **Junction**, however it is the only component that
 
 ### Component: Buffer & Regulator
 
-```unixpipe diagram-dot svg readme-img/component-buffer.svg
+```unixpipe diagram-dot readme-img/component-buffer.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -497,7 +504,7 @@ digraph G {
 }
 ```
 
-```unixpipe diagram-dot svg readme-img/component-regulator.svg
+```unixpipe diagram-dot readme-img/component-regulator.svg
 digraph G {
     rankdir=LR
     labeljust=l
@@ -544,7 +551,7 @@ The configuration below is a version of the tic-tac-toe configuration above, but
 
 Which could be visualized as:
 
-```unixpipe ./target/debug/pipeawesome2 graph --config ./examples/tic-tac-toe/many_games.pa.yaml -d | diagram-dot svg readme-img/loop-buffer-and-regulator.svg
+```unixpipe ./target/debug/pa2 graph --config ./examples/tic-tac-toe/many_games.pa.yaml -d | diagram-dot readme-img/loop-buffer-and-regulator.svg
 ```
 
 In this situation, the `l:random_player` is creating 100,000 messages instead of just 1, but every one of these will loop back around until the game is complete, so we will have a significant amount of messages. In this configuration, when there are more than 100 messages in `buffer:reprocess`, the `regulator:regulate_flow` will stop accepting messages, but when the amount of messages in the buffer drops below 10, it will resume. Using these two components can solve the problem of issue described above.
@@ -594,16 +601,16 @@ In this example 5 and 1 are priorities, when priorities are not specified, they 
 
 ### Pipeawesome Graph Legend
 
-You can draw a graph legend by running the command `./target/debug/pipeawesome2 graph --config [YOUR_CONFIG_HERE] --legend-only`. The output will be Graphviz DOT.
+You can draw a graph legend by running the command `./target/debug/pa2 graph --config [YOUR_CONFIG_HERE] --legend-only`. The output will be Graphviz DOT.
 
-```unixpipe ./target/debug/pipeawesome2 graph --config examples/tic-tac-toe/random_player.pa.yaml --legend-only | diagram-dot svg readme-img/pipeawesome-graph-legend.svg
+```unixpipe ./target/debug/pa2 graph --config examples/tic-tac-toe/random_player.pa.yaml --legend-only | diagram-dot readme-img/pipeawesome-graph-legend.svg
 ```
 
 ### Component Diagram Legend
 
 This is the legend for diagrams shown in the [Component Types](#component-types) section.
 
-```unixpipe diagram-dot svg readme-img/component-legends.svg
+```unixpipe diagram-dot readme-img/component-legends.svg
 digraph G {
     rankdir=LR
     subgraph cluster_legend {
@@ -626,5 +633,5 @@ digraph G {
 
 #### Editing Config via Command Line
 
-./target/debug/pipeawesome2 config --config examples/ls/pa.yaml launch --id l command  ls  | ./target/debug/pipeawesome2 config  --config=- --format=yaml connection --id z join 'l:ls|d:out'
+./target/debug/pa2 config --config examples/ls/pa.yaml launch --id l command  ls  | ./target/debug/pa2 config  --config=- --format=yaml connection --id z join 'l:ls|d:out'
 
