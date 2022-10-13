@@ -1,1 +1,153 @@
-<svg width="769pt" height="266pt" viewBox="0.00 0.00 769.16 266.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 262)"><title>G</title><polygon fill="white" stroke="transparent" points="-4,4 -4,-262 765.16,-262 765.16,4 -4,4"/><g id="clust2" class="cluster"><title>cluster_launch</title><path fill="none" stroke="lightgrey" d="M94,-8C94,-8 651.16,-8 651.16,-8 657.16,-8 663.16,-14 663.16,-20 663.16,-20 663.16,-238 663.16,-238 663.16,-244 657.16,-250 651.16,-250 651.16,-250 94,-250 94,-250 88,-250 82,-244 82,-238 82,-238 82,-20 82,-20 82,-14 88,-8 94,-8"/><text text-anchor="middle" x="128" y="-230" font-family="Times,serif" font-size="20.00">Launch</text></g><g id="clust3" class="cluster"><title>cluster_spawn_holder</title><polygon fill="none" stroke="white" points="269.49,-16 269.49,-212 568.87,-212 568.87,-16 269.49,-16"/></g><g id="clust4" class="cluster"><title>cluster_launch_spawn</title><polygon fill="grey" stroke="grey" points="277.49,-68 277.49,-204 560.87,-204 560.87,-68 277.49,-68"/><text text-anchor="middle" x="346.49" y="-184" font-family="Times,serif" font-size="20.00">child.spawn</text></g><g id="clust5" class="cluster"><title>cluster_launch_outputs</title><polygon fill="none" stroke="white" points="683.16,-14 683.16,-174 753.16,-174 753.16,-14 683.16,-14"/></g><!-- launch_pull --><g id="node1" class="node"><title>launch_pull</title><ellipse fill="none" stroke="black" cx="118.6" cy="-122" rx="28.7" ry="18"/><text text-anchor="middle" x="118.6" y="-118.3" font-family="Times,serif" font-size="14.00">pull</text></g><!-- launch_stdin_recv_push --><g id="node2" class="node"><title>launch_stdin_recv_push</title><ellipse fill="none" stroke="black" cx="216.34" cy="-122" rx="33.29" ry="18"/><text text-anchor="middle" x="216.34" y="-118.3" font-family="Times,serif" font-size="14.00">push</text></g><!-- launch_pull&#45;&gt;launch_stdin_recv_push --><g id="edge2" class="edge"><title>launch_pull&#45;&gt;launch_stdin_recv_push</title><path fill="none" stroke="black" d="M147.29,-122C155.31,-122 164.25,-122 172.95,-122"/><polygon fill="black" stroke="black" points="172.98,-125.5 182.98,-122 172.98,-118.5 172.98,-125.5"/></g><!-- launch_stdin_recv_pull --><g id="node3" class="node"><title>launch_stdin_recv_pull</title><ellipse fill="none" stroke="black" cx="340.08" cy="-122" rx="54.69" ry="18"/><text text-anchor="middle" x="340.08" y="-118.3" font-family="Times,serif" font-size="14.00">pull:stdin</text></g><!-- launch_stdin_recv_push&#45;&gt;launch_stdin_recv_pull --><g id="edge3" class="edge"><title>launch_stdin_recv_push&#45;&gt;launch_stdin_recv_pull</title><path fill="none" stroke="black" stroke-dasharray="5,2" d="M249.65,-122C257.63,-122 266.46,-122 275.38,-122"/><polygon fill="black" stroke="black" points="275.43,-125.5 285.43,-122 275.43,-118.5 275.43,-125.5"/></g><!-- launch_stdout_send_pull --><g id="node4" class="node"><title>launch_stdout_send_pull</title><ellipse fill="none" stroke="black" cx="491.77" cy="-94" rx="61.19" ry="18"/><text text-anchor="middle" x="491.77" y="-90.3" font-family="Times,serif" font-size="14.00">pull:stdout</text></g><!-- launch_stdin_recv_pull&#45;&gt;launch_stdout_send_pull --><g id="edge4" class="edge"><title>launch_stdin_recv_pull&#45;&gt;launch_stdout_send_pull</title><path fill="none" stroke="black" stroke-dasharray="1,5" d="M388.04,-113.22C404.5,-110.14 423.06,-106.67 439.83,-103.53"/></g><!-- launch_stderr_send_pull --><g id="node5" class="node"><title>launch_stderr_send_pull</title><ellipse fill="none" stroke="black" cx="491.77" cy="-148" rx="61.19" ry="18"/><text text-anchor="middle" x="491.77" y="-144.3" font-family="Times,serif" font-size="14.00">pull:stdout</text></g><!-- launch_stdin_recv_pull&#45;&gt;launch_stderr_send_pull --><g id="edge5" class="edge"><title>launch_stdin_recv_pull&#45;&gt;launch_stderr_send_pull</title><path fill="none" stroke="black" stroke-dasharray="1,5" d="M388.86,-130.3C404.77,-133.06 422.57,-136.15 438.79,-138.97"/></g><!-- launch_stdout_recv_push --><g id="node8" class="node"><title>launch_stdout_recv_push</title><ellipse fill="none" stroke="black" cx="622.02" cy="-94" rx="33.29" ry="18"/><text text-anchor="middle" x="622.02" y="-90.3" font-family="Times,serif" font-size="14.00">push</text></g><!-- launch_stdout_send_pull&#45;&gt;launch_stdout_recv_push --><g id="edge6" class="edge"><title>launch_stdout_send_pull&#45;&gt;launch_stdout_recv_push</title><path fill="none" stroke="black" d="M553.14,-94C561.63,-94 570.21,-94 578.28,-94"/><polygon fill="black" stroke="black" points="578.55,-97.5 588.55,-94 578.55,-90.5 578.55,-97.5"/></g><!-- launch_stderr_recv_push --><g id="node7" class="node"><title>launch_stderr_recv_push</title><ellipse fill="none" stroke="black" cx="622.02" cy="-148" rx="33.29" ry="18"/><text text-anchor="middle" x="622.02" y="-144.3" font-family="Times,serif" font-size="14.00">push</text></g><!-- launch_stderr_send_pull&#45;&gt;launch_stderr_recv_push --><g id="edge7" class="edge"><title>launch_stderr_send_pull&#45;&gt;launch_stderr_recv_push</title><path fill="none" stroke="black" d="M553.14,-148C561.63,-148 570.21,-148 578.28,-148"/><polygon fill="black" stroke="black" points="578.55,-151.5 588.55,-148 578.55,-144.5 578.55,-151.5"/></g><!-- launch_exit_send_push --><g id="node6" class="node"><title>launch_exit_send_push</title><ellipse fill="none" stroke="black" cx="340.08" cy="-42" rx="53.89" ry="18"/><text text-anchor="middle" x="340.08" y="-38.3" font-family="Times,serif" font-size="14.00">push:exit</text></g><!-- launch_exit_outer --><g id="node12" class="node"><title>launch_exit_outer</title></g><!-- launch_exit_send_push&#45;&gt;launch_exit_outer --><g id="edge10" class="edge"><title>launch_exit_send_push&#45;&gt;launch_exit_outer</title><path fill="none" stroke="black" stroke-dasharray="5,2" d="M394.17,-41.72C471.81,-41.3 614.34,-40.55 681,-40.19"/><polygon fill="black" stroke="black" points="681.05,-43.69 691.03,-40.14 681.01,-36.69 681.05,-43.69"/></g><!-- launch_stderr_outer --><g id="node11" class="node"><title>launch_stderr_outer</title></g><!-- launch_stderr_recv_push&#45;&gt;launch_stderr_outer --><g id="edge9" class="edge"><title>launch_stderr_recv_push&#45;&gt;launch_stderr_outer</title><path fill="none" stroke="black" stroke-dasharray="5,2" d="M655.42,-148C663.57,-148 672.37,-148 680.71,-148"/><polygon fill="black" stroke="black" points="680.94,-151.5 690.94,-148 680.94,-144.5 680.94,-151.5"/></g><!-- launch_stdout_outer --><g id="node10" class="node"><title>launch_stdout_outer</title></g><!-- launch_stdout_recv_push&#45;&gt;launch_stdout_outer --><g id="edge8" class="edge"><title>launch_stdout_recv_push&#45;&gt;launch_stdout_outer</title><path fill="none" stroke="black" stroke-dasharray="5,2" d="M655.42,-94C663.57,-94 672.37,-94 680.71,-94"/><polygon fill="black" stroke="black" points="680.94,-97.5 690.94,-94 680.94,-90.5 680.94,-97.5"/></g><!-- launch_input --><g id="node9" class="node"><title>launch_input</title></g><!-- launch_input&#45;&gt;launch_pull --><g id="edge1" class="edge"><title>launch_input&#45;&gt;launch_pull</title><path fill="none" stroke="black" stroke-dasharray="5,2" d="M54.4,-122C62.32,-122 71.18,-122 79.7,-122"/><polygon fill="black" stroke="black" points="79.83,-125.5 89.83,-122 79.83,-118.5 79.83,-125.5"/></g></g></svg>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.43.0 (0)
+ -->
+<!-- Title: G Pages: 1 -->
+<svg width="769pt" height="266pt"
+ viewBox="0.00 0.00 769.16 266.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 262)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-262 765.16,-262 765.16,4 -4,4"/>
+<g id="clust2" class="cluster">
+<title>cluster_launch</title>
+<path fill="none" stroke="lightgrey" d="M94,-8C94,-8 651.16,-8 651.16,-8 657.16,-8 663.16,-14 663.16,-20 663.16,-20 663.16,-238 663.16,-238 663.16,-244 657.16,-250 651.16,-250 651.16,-250 94,-250 94,-250 88,-250 82,-244 82,-238 82,-238 82,-20 82,-20 82,-14 88,-8 94,-8"/>
+<text text-anchor="middle" x="128" y="-230" font-family="Times,serif" font-size="20.00">Launch</text>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_spawn_holder</title>
+<polygon fill="none" stroke="white" points="269.49,-16 269.49,-212 568.87,-212 568.87,-16 269.49,-16"/>
+</g>
+<g id="clust4" class="cluster">
+<title>cluster_launch_spawn</title>
+<polygon fill="grey" stroke="grey" points="277.49,-68 277.49,-204 560.87,-204 560.87,-68 277.49,-68"/>
+<text text-anchor="middle" x="346.49" y="-184" font-family="Times,serif" font-size="20.00">child.spawn</text>
+</g>
+<g id="clust5" class="cluster">
+<title>cluster_launch_outputs</title>
+<polygon fill="none" stroke="white" points="683.16,-14 683.16,-174 753.16,-174 753.16,-14 683.16,-14"/>
+</g>
+<!-- launch_pull -->
+<g id="node1" class="node">
+<title>launch_pull</title>
+<ellipse fill="none" stroke="black" cx="118.6" cy="-122" rx="28.7" ry="18"/>
+<text text-anchor="middle" x="118.6" y="-118.3" font-family="Times,serif" font-size="14.00">pull</text>
+</g>
+<!-- launch_stdin_recv_push -->
+<g id="node2" class="node">
+<title>launch_stdin_recv_push</title>
+<ellipse fill="none" stroke="black" cx="216.34" cy="-122" rx="33.29" ry="18"/>
+<text text-anchor="middle" x="216.34" y="-118.3" font-family="Times,serif" font-size="14.00">push</text>
+</g>
+<!-- launch_pull&#45;&gt;launch_stdin_recv_push -->
+<g id="edge2" class="edge">
+<title>launch_pull&#45;&gt;launch_stdin_recv_push</title>
+<path fill="none" stroke="black" d="M147.29,-122C155.31,-122 164.25,-122 172.95,-122"/>
+<polygon fill="black" stroke="black" points="172.98,-125.5 182.98,-122 172.98,-118.5 172.98,-125.5"/>
+</g>
+<!-- launch_stdin_recv_pull -->
+<g id="node3" class="node">
+<title>launch_stdin_recv_pull</title>
+<ellipse fill="none" stroke="black" cx="340.08" cy="-122" rx="54.69" ry="18"/>
+<text text-anchor="middle" x="340.08" y="-118.3" font-family="Times,serif" font-size="14.00">pull:stdin</text>
+</g>
+<!-- launch_stdin_recv_push&#45;&gt;launch_stdin_recv_pull -->
+<g id="edge3" class="edge">
+<title>launch_stdin_recv_push&#45;&gt;launch_stdin_recv_pull</title>
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M249.65,-122C257.63,-122 266.46,-122 275.38,-122"/>
+<polygon fill="black" stroke="black" points="275.43,-125.5 285.43,-122 275.43,-118.5 275.43,-125.5"/>
+</g>
+<!-- launch_stdout_send_pull -->
+<g id="node4" class="node">
+<title>launch_stdout_send_pull</title>
+<ellipse fill="none" stroke="black" cx="491.77" cy="-94" rx="61.19" ry="18"/>
+<text text-anchor="middle" x="491.77" y="-90.3" font-family="Times,serif" font-size="14.00">pull:stdout</text>
+</g>
+<!-- launch_stdin_recv_pull&#45;&gt;launch_stdout_send_pull -->
+<g id="edge4" class="edge">
+<title>launch_stdin_recv_pull&#45;&gt;launch_stdout_send_pull</title>
+<path fill="none" stroke="black" stroke-dasharray="1,5" d="M388.04,-113.22C404.5,-110.14 423.06,-106.67 439.83,-103.53"/>
+</g>
+<!-- launch_stderr_send_pull -->
+<g id="node5" class="node">
+<title>launch_stderr_send_pull</title>
+<ellipse fill="none" stroke="black" cx="491.77" cy="-148" rx="61.19" ry="18"/>
+<text text-anchor="middle" x="491.77" y="-144.3" font-family="Times,serif" font-size="14.00">pull:stdout</text>
+</g>
+<!-- launch_stdin_recv_pull&#45;&gt;launch_stderr_send_pull -->
+<g id="edge5" class="edge">
+<title>launch_stdin_recv_pull&#45;&gt;launch_stderr_send_pull</title>
+<path fill="none" stroke="black" stroke-dasharray="1,5" d="M388.86,-130.3C404.77,-133.06 422.57,-136.15 438.79,-138.97"/>
+</g>
+<!-- launch_stdout_recv_push -->
+<g id="node8" class="node">
+<title>launch_stdout_recv_push</title>
+<ellipse fill="none" stroke="black" cx="622.02" cy="-94" rx="33.29" ry="18"/>
+<text text-anchor="middle" x="622.02" y="-90.3" font-family="Times,serif" font-size="14.00">push</text>
+</g>
+<!-- launch_stdout_send_pull&#45;&gt;launch_stdout_recv_push -->
+<g id="edge6" class="edge">
+<title>launch_stdout_send_pull&#45;&gt;launch_stdout_recv_push</title>
+<path fill="none" stroke="black" d="M553.14,-94C561.63,-94 570.21,-94 578.28,-94"/>
+<polygon fill="black" stroke="black" points="578.55,-97.5 588.55,-94 578.55,-90.5 578.55,-97.5"/>
+</g>
+<!-- launch_stderr_recv_push -->
+<g id="node7" class="node">
+<title>launch_stderr_recv_push</title>
+<ellipse fill="none" stroke="black" cx="622.02" cy="-148" rx="33.29" ry="18"/>
+<text text-anchor="middle" x="622.02" y="-144.3" font-family="Times,serif" font-size="14.00">push</text>
+</g>
+<!-- launch_stderr_send_pull&#45;&gt;launch_stderr_recv_push -->
+<g id="edge7" class="edge">
+<title>launch_stderr_send_pull&#45;&gt;launch_stderr_recv_push</title>
+<path fill="none" stroke="black" d="M553.14,-148C561.63,-148 570.21,-148 578.28,-148"/>
+<polygon fill="black" stroke="black" points="578.55,-151.5 588.55,-148 578.55,-144.5 578.55,-151.5"/>
+</g>
+<!-- launch_exit_send_push -->
+<g id="node6" class="node">
+<title>launch_exit_send_push</title>
+<ellipse fill="none" stroke="black" cx="340.08" cy="-42" rx="53.89" ry="18"/>
+<text text-anchor="middle" x="340.08" y="-38.3" font-family="Times,serif" font-size="14.00">push:exit</text>
+</g>
+<!-- launch_exit_outer -->
+<g id="node12" class="node">
+<title>launch_exit_outer</title>
+</g>
+<!-- launch_exit_send_push&#45;&gt;launch_exit_outer -->
+<g id="edge10" class="edge">
+<title>launch_exit_send_push&#45;&gt;launch_exit_outer</title>
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M394.17,-41.72C471.81,-41.3 614.34,-40.55 681,-40.19"/>
+<polygon fill="black" stroke="black" points="681.05,-43.69 691.03,-40.14 681.01,-36.69 681.05,-43.69"/>
+</g>
+<!-- launch_stderr_outer -->
+<g id="node11" class="node">
+<title>launch_stderr_outer</title>
+</g>
+<!-- launch_stderr_recv_push&#45;&gt;launch_stderr_outer -->
+<g id="edge9" class="edge">
+<title>launch_stderr_recv_push&#45;&gt;launch_stderr_outer</title>
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M655.42,-148C663.57,-148 672.37,-148 680.71,-148"/>
+<polygon fill="black" stroke="black" points="680.94,-151.5 690.94,-148 680.94,-144.5 680.94,-151.5"/>
+</g>
+<!-- launch_stdout_outer -->
+<g id="node10" class="node">
+<title>launch_stdout_outer</title>
+</g>
+<!-- launch_stdout_recv_push&#45;&gt;launch_stdout_outer -->
+<g id="edge8" class="edge">
+<title>launch_stdout_recv_push&#45;&gt;launch_stdout_outer</title>
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M655.42,-94C663.57,-94 672.37,-94 680.71,-94"/>
+<polygon fill="black" stroke="black" points="680.94,-97.5 690.94,-94 680.94,-90.5 680.94,-97.5"/>
+</g>
+<!-- launch_input -->
+<g id="node9" class="node">
+<title>launch_input</title>
+</g>
+<!-- launch_input&#45;&gt;launch_pull -->
+<g id="edge1" class="edge">
+<title>launch_input&#45;&gt;launch_pull</title>
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M54.4,-122C62.32,-122 71.18,-122 79.7,-122"/>
+<polygon fill="black" stroke="black" points="79.83,-125.5 89.83,-122 79.83,-118.5 79.83,-125.5"/>
+</g>
+</g>
+</svg>

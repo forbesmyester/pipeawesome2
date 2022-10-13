@@ -1,8 +1,7 @@
 connection:
-  random_selection: "l:random_player | junction:turn"
-  player_o_branch: "junction:turn | l:player_o_filter | l:player_o | junction:draw"
-  player_x_branch: "junction:turn | l:player_x_filter | l:player_x | junction:draw"
-  last_draw: "junction:draw | l:referee | l:draw | d:output"
+  player_o_branch: "l:random_player | l:player_o_filter | l:player_o | l:referee"
+  player_x_branch: "l:random_player | l:player_x_filter | l:player_x | l:referee"
+  last_draw: "l:referee | l:draw | d:output"
 drain:
   output: { destination: '-' }
 launch:

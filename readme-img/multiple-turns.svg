@@ -1,1 +1,159 @@
-<svg width="759pt" height="393pt" viewBox="0.00 0.00 759.00 393.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 389)"><title>g_get_graph</title><polygon fill="white" stroke="transparent" points="-4,4 -4,-389 755,-389 755,4 -4,4"/><g id="clust2" class="cluster"><title>cluster_nodes_player_o_branch</title><polygon fill="none" stroke="black" points="8,-155 8,-230 238,-230 238,-155 8,-155"/><text text-anchor="middle" x="76.5" y="-214.8" font-family="Times,serif" font-size="14.00">player_o_branch:</text></g><g id="clust3" class="cluster"><title>cluster_nodes_player_x_branch</title><polygon fill="none" stroke="black" points="246,-155 246,-230 476,-230 476,-155 246,-155"/><text text-anchor="middle" x="314.5" y="-214.8" font-family="Times,serif" font-size="14.00">player_x_branch:</text></g><g id="clust4" class="cluster"><title>cluster_nodes_random_selection</title><polygon fill="none" stroke="black" points="240,-302 240,-377 386,-377 386,-302 240,-302"/><text text-anchor="middle" x="313" y="-361.8" font-family="Times,serif" font-size="14.00">random_selection:</text></g><g id="clust5" class="cluster"><title>cluster_nodes_last_draw</title><polygon fill="none" stroke="black" points="371,-8 371,-83 743,-83 743,-8 371,-8"/><text text-anchor="middle" x="416" y="-67.8" font-family="Times,serif" font-size="14.00">last_draw:</text></g><!-- j_draw --><g id="node1" class="node"><title>j_draw</title><ellipse fill="papayawhip" stroke="black" cx="413" cy="-109" rx="34.39" ry="18"/><text text-anchor="middle" x="413" y="-105.3" font-family="Times,serif" font-size="14.00">draw</text></g><!-- l_referee --><g id="node9" class="node"><title>l_referee</title><polygon fill="lightblue" stroke="black" points="447,-52 379,-52 379,-16 447,-16 447,-52"/><text text-anchor="middle" x="413" y="-30.3" font-family="Times,serif" font-size="14.00">referee</text></g><!-- j_draw&#45;&gt;l_referee --><g id="edge1" class="edge"><title>j_draw&#45;&gt;l_referee</title><path fill="none" stroke="black" d="M413,-90.7C413,-82.25 413,-71.87 413,-62.37"/><polygon fill="black" stroke="black" points="416.5,-62.18 413,-52.18 409.5,-62.18 416.5,-62.18"/></g><!-- j_turn --><g id="node2" class="node"><title>j_turn</title><ellipse fill="papayawhip" stroke="black" cx="313" cy="-256" rx="30.59" ry="18"/><text text-anchor="middle" x="313" y="-252.3" font-family="Times,serif" font-size="14.00">turn</text></g><!-- l_player_o_filter --><g id="node3" class="node"><title>l_player_o_filter</title><polygon fill="lightblue" stroke="black" points="134,-199 16,-199 16,-163 134,-163 134,-199"/><text text-anchor="middle" x="75" y="-177.3" font-family="Times,serif" font-size="14.00">player_o_filter</text></g><!-- j_turn&#45;&gt;l_player_o_filter --><g id="edge6" class="edge"><title>j_turn&#45;&gt;l_player_o_filter</title><path fill="none" stroke="black" d="M282.42,-254.74C247.51,-253.5 189.26,-248.49 143,-230 128.42,-224.17 113.97,-214.65 102.17,-205.61"/><polygon fill="black" stroke="black" points="104.08,-202.66 94.07,-199.18 99.72,-208.14 104.08,-202.66"/></g><!-- l_player_x_filter --><g id="node5" class="node"><title>l_player_x_filter</title><polygon fill="lightblue" stroke="black" points="372,-199 254,-199 254,-163 372,-163 372,-199"/><text text-anchor="middle" x="313" y="-177.3" font-family="Times,serif" font-size="14.00">player_x_filter</text></g><!-- j_turn&#45;&gt;l_player_x_filter --><g id="edge9" class="edge"><title>j_turn&#45;&gt;l_player_x_filter</title><path fill="none" stroke="black" d="M313,-237.7C313,-229.25 313,-218.87 313,-209.37"/><polygon fill="black" stroke="black" points="316.5,-209.18 313,-199.18 309.5,-209.18 316.5,-209.18"/></g><!-- l_player_o --><g id="node4" class="node"><title>l_player_o</title><polygon fill="lightblue" stroke="black" points="229.5,-199 152.5,-199 152.5,-163 229.5,-163 229.5,-199"/><text text-anchor="middle" x="191" y="-177.3" font-family="Times,serif" font-size="14.00">player_o</text></g><!-- l_player_o_filter&#45;&gt;l_player_o --><g id="edge7" class="edge"><title>l_player_o_filter&#45;&gt;l_player_o</title><path fill="none" stroke="black" d="M134.36,-181C136.85,-181 139.34,-181 141.83,-181"/><polygon fill="black" stroke="black" points="142.06,-184.5 152.06,-181 142.06,-177.5 142.06,-184.5"/></g><!-- l_player_o&#45;&gt;j_draw --><g id="edge8" class="edge"><title>l_player_o&#45;&gt;j_draw</title><path fill="none" stroke="black" d="M223.5,-162.88C229.56,-160.03 235.9,-157.27 242,-155 285.07,-138.96 336.25,-126.29 371.32,-118.53"/><polygon fill="black" stroke="black" points="372.19,-121.93 381.22,-116.38 370.7,-115.09 372.19,-121.93"/></g><!-- l_player_x --><g id="node6" class="node"><title>l_player_x</title><polygon fill="lightblue" stroke="black" points="467.5,-199 390.5,-199 390.5,-163 467.5,-163 467.5,-199"/><text text-anchor="middle" x="429" y="-177.3" font-family="Times,serif" font-size="14.00">player_x</text></g><!-- l_player_x_filter&#45;&gt;l_player_x --><g id="edge10" class="edge"><title>l_player_x_filter&#45;&gt;l_player_x</title><path fill="none" stroke="black" d="M372.36,-181C374.85,-181 377.34,-181 379.83,-181"/><polygon fill="black" stroke="black" points="380.06,-184.5 390.06,-181 380.06,-177.5 380.06,-184.5"/></g><!-- l_player_x&#45;&gt;j_draw --><g id="edge11" class="edge"><title>l_player_x&#45;&gt;j_draw</title><path fill="none" stroke="black" d="M425.04,-162.7C423.28,-154.98 421.16,-145.71 419.2,-137.11"/><polygon fill="black" stroke="black" points="422.55,-136.07 416.91,-127.1 415.73,-137.63 422.55,-136.07"/></g><!-- l_random_player --><g id="node7" class="node"><title>l_random_player</title><polygon fill="lightblue" stroke="black" points="374.5,-346 251.5,-346 251.5,-310 374.5,-310 374.5,-346"/><text text-anchor="middle" x="313" y="-324.3" font-family="Times,serif" font-size="14.00">random_player</text></g><!-- l_random_player&#45;&gt;j_turn --><g id="edge12" class="edge"><title>l_random_player&#45;&gt;j_turn</title><path fill="none" stroke="black" d="M313,-309.7C313,-301.98 313,-292.71 313,-284.11"/><polygon fill="black" stroke="black" points="316.5,-284.1 313,-274.1 309.5,-284.1 316.5,-284.1"/></g><!-- d_output --><g id="node8" class="node"><title>d_output</title><polygon fill="lightpink" stroke="black" points="641.75,-16 710.25,-16 734.65,-52 617.35,-52 641.75,-16"/><text text-anchor="middle" x="676" y="-30.3" font-family="Times,serif" font-size="14.00">output</text></g><!-- j_loop --><g id="node11" class="node"><title>j_loop</title><ellipse fill="papayawhip" stroke="black" cx="496" cy="-34" rx="30.59" ry="18"/><text text-anchor="middle" x="496" y="-30.3" font-family="Times,serif" font-size="14.00">loop</text></g><!-- l_referee&#45;&gt;j_loop --><g id="edge2" class="edge"><title>l_referee&#45;&gt;j_loop</title><path fill="none" stroke="black" d="M447.04,-34C449.82,-34 452.59,-34 455.36,-34"/><polygon fill="black" stroke="black" points="455.4,-37.5 465.4,-34 455.4,-30.5 455.4,-37.5"/></g><!-- l_draw --><g id="node10" class="node"><title>l_draw</title><polygon fill="lightblue" stroke="black" points="599,-52 545,-52 545,-16 599,-16 599,-52"/><text text-anchor="middle" x="572" y="-30.3" font-family="Times,serif" font-size="14.00">draw</text></g><!-- l_draw&#45;&gt;d_output --><g id="edge4" class="edge"><title>l_draw&#45;&gt;d_output</title><path fill="none" stroke="black" d="M599.22,-34C605.85,-34 612.47,-34 619.1,-34"/><polygon fill="black" stroke="black" points="619.51,-37.5 629.51,-34 619.51,-30.5 619.51,-37.5"/></g><!-- j_loop&#45;&gt;j_turn --><g id="edge5" class="edge"><title>j_loop&#45;&gt;j_turn</title><path fill="none" stroke="black" d="M500.7,-51.79C510.07,-89.28 526.41,-180.39 480,-230 463.31,-247.84 397.59,-253.05 353.74,-254.51"/><polygon fill="black" stroke="black" points="353.55,-251.01 343.65,-254.79 353.75,-258.01 353.55,-251.01"/></g><!-- j_loop&#45;&gt;l_draw --><g id="edge3" class="edge"><title>j_loop&#45;&gt;l_draw</title><path fill="none" stroke="black" d="M526.58,-34C529.22,-34 531.86,-34 534.5,-34"/><polygon fill="black" stroke="black" points="534.68,-37.5 544.68,-34 534.68,-30.5 534.68,-37.5"/></g></g></svg>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.43.0 (0)
+ -->
+<!-- Title: g_get_graph Pages: 1 -->
+<svg width="759pt" height="329pt"
+ viewBox="0.00 0.00 759.00 329.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 325)">
+<title>g_get_graph</title>
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-325 755,-325 755,4 -4,4"/>
+<g id="clust2" class="cluster">
+<title>cluster_nodes_player_o_branch</title>
+<polygon fill="none" stroke="black" points="8,-91 8,-166 238,-166 238,-91 8,-91"/>
+<text text-anchor="middle" x="76.5" y="-150.8" font-family="Times,serif" font-size="14.00">player_o_branch:</text>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_nodes_player_x_branch</title>
+<polygon fill="none" stroke="black" points="246,-91 246,-166 476,-166 476,-91 246,-91"/>
+<text text-anchor="middle" x="314.5" y="-150.8" font-family="Times,serif" font-size="14.00">player_x_branch:</text>
+</g>
+<g id="clust4" class="cluster">
+<title>cluster_nodes_random_selection</title>
+<polygon fill="none" stroke="black" points="240,-238 240,-313 386,-313 386,-238 240,-238"/>
+<text text-anchor="middle" x="313" y="-297.8" font-family="Times,serif" font-size="14.00">random_selection:</text>
+</g>
+<g id="clust5" class="cluster">
+<title>cluster_nodes_last_draw</title>
+<polygon fill="none" stroke="black" points="371,-8 371,-83 743,-83 743,-8 371,-8"/>
+<text text-anchor="middle" x="416" y="-67.8" font-family="Times,serif" font-size="14.00">last_draw:</text>
+</g>
+<!-- j_turn -->
+<g id="node1" class="node">
+<title>j_turn</title>
+<ellipse fill="papayawhip" stroke="black" cx="313" cy="-192" rx="30.59" ry="18"/>
+<text text-anchor="middle" x="313" y="-188.3" font-family="Times,serif" font-size="14.00">turn</text>
+</g>
+<!-- l_player_o_filter -->
+<g id="node2" class="node">
+<title>l_player_o_filter</title>
+<polygon fill="lightblue" stroke="black" points="134,-135 16,-135 16,-99 134,-99 134,-135"/>
+<text text-anchor="middle" x="75" y="-113.3" font-family="Times,serif" font-size="14.00">player_o_filter</text>
+</g>
+<!-- j_turn&#45;&gt;l_player_o_filter -->
+<g id="edge5" class="edge">
+<title>j_turn&#45;&gt;l_player_o_filter</title>
+<path fill="none" stroke="black" d="M282.42,-190.74C247.51,-189.5 189.26,-184.49 143,-166 128.42,-160.17 113.97,-150.65 102.17,-141.61"/>
+<polygon fill="black" stroke="black" points="104.08,-138.66 94.07,-135.18 99.72,-144.14 104.08,-138.66"/>
+</g>
+<!-- l_player_x_filter -->
+<g id="node4" class="node">
+<title>l_player_x_filter</title>
+<polygon fill="lightblue" stroke="black" points="372,-135 254,-135 254,-99 372,-99 372,-135"/>
+<text text-anchor="middle" x="313" y="-113.3" font-family="Times,serif" font-size="14.00">player_x_filter</text>
+</g>
+<!-- j_turn&#45;&gt;l_player_x_filter -->
+<g id="edge8" class="edge">
+<title>j_turn&#45;&gt;l_player_x_filter</title>
+<path fill="none" stroke="black" d="M313,-173.7C313,-165.25 313,-154.87 313,-145.37"/>
+<polygon fill="black" stroke="black" points="316.5,-145.18 313,-135.18 309.5,-145.18 316.5,-145.18"/>
+</g>
+<!-- l_player_o -->
+<g id="node3" class="node">
+<title>l_player_o</title>
+<polygon fill="lightblue" stroke="black" points="229.5,-135 152.5,-135 152.5,-99 229.5,-99 229.5,-135"/>
+<text text-anchor="middle" x="191" y="-113.3" font-family="Times,serif" font-size="14.00">player_o</text>
+</g>
+<!-- l_player_o_filter&#45;&gt;l_player_o -->
+<g id="edge6" class="edge">
+<title>l_player_o_filter&#45;&gt;l_player_o</title>
+<path fill="none" stroke="black" d="M134.36,-117C136.85,-117 139.34,-117 141.83,-117"/>
+<polygon fill="black" stroke="black" points="142.06,-120.5 152.06,-117 142.06,-113.5 142.06,-120.5"/>
+</g>
+<!-- l_referee -->
+<g id="node7" class="node">
+<title>l_referee</title>
+<polygon fill="lightblue" stroke="black" points="447,-52 379,-52 379,-16 447,-16 447,-52"/>
+<text text-anchor="middle" x="413" y="-30.3" font-family="Times,serif" font-size="14.00">referee</text>
+</g>
+<!-- l_player_o&#45;&gt;l_referee -->
+<g id="edge7" class="edge">
+<title>l_player_o&#45;&gt;l_referee</title>
+<path fill="none" stroke="black" d="M224.17,-98.92C230.04,-96.13 236.15,-93.38 242,-91 284.27,-73.81 333.98,-58.01 368.88,-47.6"/>
+<polygon fill="black" stroke="black" points="370.16,-50.87 378.75,-44.68 368.17,-44.16 370.16,-50.87"/>
+</g>
+<!-- l_player_x -->
+<g id="node5" class="node">
+<title>l_player_x</title>
+<polygon fill="lightblue" stroke="black" points="467.5,-135 390.5,-135 390.5,-99 467.5,-99 467.5,-135"/>
+<text text-anchor="middle" x="429" y="-113.3" font-family="Times,serif" font-size="14.00">player_x</text>
+</g>
+<!-- l_player_x_filter&#45;&gt;l_player_x -->
+<g id="edge9" class="edge">
+<title>l_player_x_filter&#45;&gt;l_player_x</title>
+<path fill="none" stroke="black" d="M372.36,-117C374.85,-117 377.34,-117 379.83,-117"/>
+<polygon fill="black" stroke="black" points="380.06,-120.5 390.06,-117 380.06,-113.5 380.06,-120.5"/>
+</g>
+<!-- l_player_x&#45;&gt;l_referee -->
+<g id="edge10" class="edge">
+<title>l_player_x&#45;&gt;l_referee</title>
+<path fill="none" stroke="black" d="M425.61,-98.82C423.51,-88.19 420.76,-74.31 418.37,-62.2"/>
+<polygon fill="black" stroke="black" points="421.76,-61.29 416.39,-52.15 414.89,-62.64 421.76,-61.29"/>
+</g>
+<!-- l_random_player -->
+<g id="node6" class="node">
+<title>l_random_player</title>
+<polygon fill="lightblue" stroke="black" points="374.5,-282 251.5,-282 251.5,-246 374.5,-246 374.5,-282"/>
+<text text-anchor="middle" x="313" y="-260.3" font-family="Times,serif" font-size="14.00">random_player</text>
+</g>
+<!-- l_random_player&#45;&gt;j_turn -->
+<g id="edge11" class="edge">
+<title>l_random_player&#45;&gt;j_turn</title>
+<path fill="none" stroke="black" d="M313,-245.7C313,-237.98 313,-228.71 313,-220.11"/>
+<polygon fill="black" stroke="black" points="316.5,-220.1 313,-210.1 309.5,-220.1 316.5,-220.1"/>
+</g>
+<!-- j_loop -->
+<g id="node9" class="node">
+<title>j_loop</title>
+<ellipse fill="papayawhip" stroke="black" cx="496" cy="-34" rx="30.59" ry="18"/>
+<text text-anchor="middle" x="496" y="-30.3" font-family="Times,serif" font-size="14.00">loop</text>
+</g>
+<!-- l_referee&#45;&gt;j_loop -->
+<g id="edge1" class="edge">
+<title>l_referee&#45;&gt;j_loop</title>
+<path fill="none" stroke="black" d="M447.04,-34C449.82,-34 452.59,-34 455.36,-34"/>
+<polygon fill="black" stroke="black" points="455.4,-37.5 465.4,-34 455.4,-30.5 455.4,-37.5"/>
+</g>
+<!-- l_draw -->
+<g id="node8" class="node">
+<title>l_draw</title>
+<polygon fill="lightblue" stroke="black" points="599,-52 545,-52 545,-16 599,-16 599,-52"/>
+<text text-anchor="middle" x="572" y="-30.3" font-family="Times,serif" font-size="14.00">draw</text>
+</g>
+<!-- d_output -->
+<g id="node10" class="node">
+<title>d_output</title>
+<polygon fill="lightpink" stroke="black" points="641.75,-16 710.25,-16 734.65,-52 617.35,-52 641.75,-16"/>
+<text text-anchor="middle" x="676" y="-30.3" font-family="Times,serif" font-size="14.00">output</text>
+</g>
+<!-- l_draw&#45;&gt;d_output -->
+<g id="edge3" class="edge">
+<title>l_draw&#45;&gt;d_output</title>
+<path fill="none" stroke="black" d="M599.22,-34C605.85,-34 612.47,-34 619.1,-34"/>
+<polygon fill="black" stroke="black" points="619.51,-37.5 629.51,-34 619.51,-30.5 619.51,-37.5"/>
+</g>
+<!-- j_loop&#45;&gt;j_turn -->
+<g id="edge4" class="edge">
+<title>j_loop&#45;&gt;j_turn</title>
+<path fill="none" stroke="black" d="M499.73,-52.18C504.7,-80.14 509.72,-135.46 480,-166 462.96,-183.5 397.34,-188.81 353.61,-190.39"/>
+<polygon fill="black" stroke="black" points="353.44,-186.89 343.55,-190.7 353.65,-193.89 353.44,-186.89"/>
+</g>
+<!-- j_loop&#45;&gt;l_draw -->
+<g id="edge2" class="edge">
+<title>j_loop&#45;&gt;l_draw</title>
+<path fill="none" stroke="black" d="M526.58,-34C529.22,-34 531.86,-34 534.5,-34"/>
+<polygon fill="black" stroke="black" points="534.68,-37.5 544.68,-34 534.68,-30.5 534.68,-37.5"/>
+</g>
+</g>
+</svg>

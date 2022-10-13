@@ -1,1 +1,124 @@
-<svg width="495pt" height="393pt" viewBox="0.00 0.00 495.00 393.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 389)"><title>g_get_graph</title><polygon fill="white" stroke="transparent" points="-4,4 -4,-389 491,-389 491,4 -4,4"/><g id="clust2" class="cluster"><title>cluster_nodes_player_o_branch</title><polygon fill="none" stroke="black" points="11,-155 11,-230 241,-230 241,-155 11,-155"/><text text-anchor="middle" x="79.5" y="-214.8" font-family="Times,serif" font-size="14.00">player_o_branch:</text></g><g id="clust3" class="cluster"><title>cluster_nodes_player_x_branch</title><polygon fill="none" stroke="black" points="249,-155 249,-230 479,-230 479,-155 249,-155"/><text text-anchor="middle" x="317.5" y="-214.8" font-family="Times,serif" font-size="14.00">player_x_branch:</text></g><g id="clust4" class="cluster"><title>cluster_nodes_random_selection</title><polygon fill="none" stroke="black" points="8,-302 8,-377 154,-377 154,-302 8,-302"/><text text-anchor="middle" x="81" y="-361.8" font-family="Times,serif" font-size="14.00">random_selection:</text></g><g id="clust5" class="cluster"><title>cluster_nodes_last_draw</title><polygon fill="none" stroke="black" points="169,-8 169,-83 461,-83 461,-8 169,-8"/><text text-anchor="middle" x="214" y="-67.8" font-family="Times,serif" font-size="14.00">last_draw:</text></g><!-- j_draw --><g id="node1" class="node"><title>j_draw</title><ellipse fill="papayawhip" stroke="black" cx="211" cy="-109" rx="34.39" ry="18"/><text text-anchor="middle" x="211" y="-105.3" font-family="Times,serif" font-size="14.00">draw</text></g><!-- l_referee --><g id="node8" class="node"><title>l_referee</title><polygon fill="lightblue" stroke="black" points="245,-52 177,-52 177,-16 245,-16 245,-52"/><text text-anchor="middle" x="211" y="-30.3" font-family="Times,serif" font-size="14.00">referee</text></g><!-- j_draw&#45;&gt;l_referee --><g id="edge1" class="edge"><title>j_draw&#45;&gt;l_referee</title><path fill="none" stroke="black" d="M211,-90.7C211,-82.25 211,-71.87 211,-62.37"/><polygon fill="black" stroke="black" points="214.5,-62.18 211,-52.18 207.5,-62.18 214.5,-62.18"/></g><!-- j_turn --><g id="node2" class="node"><title>j_turn</title><ellipse fill="papayawhip" stroke="black" cx="81" cy="-256" rx="30.59" ry="18"/><text text-anchor="middle" x="81" y="-252.3" font-family="Times,serif" font-size="14.00">turn</text></g><!-- l_player_o_filter --><g id="node3" class="node"><title>l_player_o_filter</title><polygon fill="lightblue" stroke="black" points="137,-199 19,-199 19,-163 137,-163 137,-199"/><text text-anchor="middle" x="78" y="-177.3" font-family="Times,serif" font-size="14.00">player_o_filter</text></g><!-- j_turn&#45;&gt;l_player_o_filter --><g id="edge4" class="edge"><title>j_turn&#45;&gt;l_player_o_filter</title><path fill="none" stroke="black" d="M80.29,-237.7C79.94,-229.25 79.52,-218.87 79.12,-209.37"/><polygon fill="black" stroke="black" points="82.61,-209.02 78.71,-199.18 75.62,-209.31 82.61,-209.02"/></g><!-- l_player_x_filter --><g id="node5" class="node"><title>l_player_x_filter</title><polygon fill="lightblue" stroke="black" points="375,-199 257,-199 257,-163 375,-163 375,-199"/><text text-anchor="middle" x="316" y="-177.3" font-family="Times,serif" font-size="14.00">player_x_filter</text></g><!-- j_turn&#45;&gt;l_player_x_filter --><g id="edge7" class="edge"><title>j_turn&#45;&gt;l_player_x_filter</title><path fill="none" stroke="black" d="M111.66,-254.33C145.41,-252.69 200.74,-247.31 245,-230 260.2,-224.05 275.41,-214.39 287.83,-205.29"/><polygon fill="black" stroke="black" points="290.1,-207.96 295.95,-199.13 285.86,-202.39 290.1,-207.96"/></g><!-- l_player_o --><g id="node4" class="node"><title>l_player_o</title><polygon fill="lightblue" stroke="black" points="232.5,-199 155.5,-199 155.5,-163 232.5,-163 232.5,-199"/><text text-anchor="middle" x="194" y="-177.3" font-family="Times,serif" font-size="14.00">player_o</text></g><!-- l_player_o_filter&#45;&gt;l_player_o --><g id="edge5" class="edge"><title>l_player_o_filter&#45;&gt;l_player_o</title><path fill="none" stroke="black" d="M137.36,-181C139.85,-181 142.34,-181 144.83,-181"/><polygon fill="black" stroke="black" points="145.06,-184.5 155.06,-181 145.06,-177.5 145.06,-184.5"/></g><!-- l_player_o&#45;&gt;j_draw --><g id="edge6" class="edge"><title>l_player_o&#45;&gt;j_draw</title><path fill="none" stroke="black" d="M198.2,-162.7C200.1,-154.9 202.38,-145.51 204.48,-136.83"/><polygon fill="black" stroke="black" points="207.89,-137.65 206.85,-127.1 201.08,-136 207.89,-137.65"/></g><!-- l_player_x --><g id="node6" class="node"><title>l_player_x</title><polygon fill="lightblue" stroke="black" points="470.5,-199 393.5,-199 393.5,-163 470.5,-163 470.5,-199"/><text text-anchor="middle" x="432" y="-177.3" font-family="Times,serif" font-size="14.00">player_x</text></g><!-- l_player_x_filter&#45;&gt;l_player_x --><g id="edge8" class="edge"><title>l_player_x_filter&#45;&gt;l_player_x</title><path fill="none" stroke="black" d="M375.36,-181C377.85,-181 380.34,-181 382.83,-181"/><polygon fill="black" stroke="black" points="383.06,-184.5 393.06,-181 383.06,-177.5 383.06,-184.5"/></g><!-- l_player_x&#45;&gt;j_draw --><g id="edge9" class="edge"><title>l_player_x&#45;&gt;j_draw</title><path fill="none" stroke="black" d="M401.75,-162.94C395.96,-160.05 389.88,-157.26 384,-155 340.5,-138.26 288.5,-125.68 252.95,-118.13"/><polygon fill="black" stroke="black" points="253.43,-114.66 242.92,-116.04 252,-121.51 253.43,-114.66"/></g><!-- l_random_player --><g id="node7" class="node"><title>l_random_player</title><polygon fill="lightblue" stroke="black" points="142.5,-346 19.5,-346 19.5,-310 142.5,-310 142.5,-346"/><text text-anchor="middle" x="81" y="-324.3" font-family="Times,serif" font-size="14.00">random_player</text></g><!-- l_random_player&#45;&gt;j_turn --><g id="edge10" class="edge"><title>l_random_player&#45;&gt;j_turn</title><path fill="none" stroke="black" d="M81,-309.7C81,-301.98 81,-292.71 81,-284.11"/><polygon fill="black" stroke="black" points="84.5,-284.1 81,-274.1 77.5,-284.1 84.5,-284.1"/></g><!-- l_draw --><g id="node9" class="node"><title>l_draw</title><polygon fill="lightblue" stroke="black" points="317,-52 263,-52 263,-16 317,-16 317,-52"/><text text-anchor="middle" x="290" y="-30.3" font-family="Times,serif" font-size="14.00">draw</text></g><!-- l_referee&#45;&gt;l_draw --><g id="edge2" class="edge"><title>l_referee&#45;&gt;l_draw</title><path fill="none" stroke="black" d="M245.25,-34C247.71,-34 250.17,-34 252.63,-34"/><polygon fill="black" stroke="black" points="252.73,-37.5 262.73,-34 252.73,-30.5 252.73,-37.5"/></g><!-- d_output --><g id="node10" class="node"><title>d_output</title><polygon fill="lightpink" stroke="black" points="359.75,-16 428.25,-16 452.65,-52 335.35,-52 359.75,-16"/><text text-anchor="middle" x="394" y="-30.3" font-family="Times,serif" font-size="14.00">output</text></g><!-- l_draw&#45;&gt;d_output --><g id="edge3" class="edge"><title>l_draw&#45;&gt;d_output</title><path fill="none" stroke="black" d="M317.22,-34C323.85,-34 330.47,-34 337.1,-34"/><polygon fill="black" stroke="black" points="337.51,-37.5 347.51,-34 337.51,-30.5 337.51,-37.5"/></g></g></svg>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.43.0 (0)
+ -->
+<!-- Title: g_get_graph Pages: 1 -->
+<svg width="529pt" height="265pt"
+ viewBox="0.00 0.00 529.00 265.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 261)">
+<title>g_get_graph</title>
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-261 525,-261 525,4 -4,4"/>
+<g id="clust2" class="cluster">
+<title>cluster_nodes_player_o_branch</title>
+<polygon fill="none" stroke="black" points="8,-174 8,-249 380,-249 380,-174 8,-174"/>
+<text text-anchor="middle" x="76.5" y="-233.8" font-family="Times,serif" font-size="14.00">player_o_branch:</text>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_nodes_player_x_branch</title>
+<polygon fill="none" stroke="black" points="29,-91 29,-166 259,-166 259,-91 29,-91"/>
+<text text-anchor="middle" x="97.5" y="-150.8" font-family="Times,serif" font-size="14.00">player_x_branch:</text>
+</g>
+<g id="clust4" class="cluster">
+<title>cluster_nodes_last_draw</title>
+<polygon fill="none" stroke="black" points="221,-8 221,-83 513,-83 513,-8 221,-8"/>
+<text text-anchor="middle" x="266" y="-67.8" font-family="Times,serif" font-size="14.00">last_draw:</text>
+</g>
+<!-- l_random_player -->
+<g id="node1" class="node">
+<title>l_random_player</title>
+<polygon fill="lightblue" stroke="black" points="139.5,-218 16.5,-218 16.5,-182 139.5,-182 139.5,-218"/>
+<text text-anchor="middle" x="78" y="-196.3" font-family="Times,serif" font-size="14.00">random_player</text>
+</g>
+<!-- l_player_o_filter -->
+<g id="node2" class="node">
+<title>l_player_o_filter</title>
+<polygon fill="lightblue" stroke="black" points="276,-218 158,-218 158,-182 276,-182 276,-218"/>
+<text text-anchor="middle" x="217" y="-196.3" font-family="Times,serif" font-size="14.00">player_o_filter</text>
+</g>
+<!-- l_random_player&#45;&gt;l_player_o_filter -->
+<g id="edge3" class="edge">
+<title>l_random_player&#45;&gt;l_player_o_filter</title>
+<path fill="none" stroke="black" d="M139.63,-200C142.27,-200 144.92,-200 147.56,-200"/>
+<polygon fill="black" stroke="black" points="147.76,-203.5 157.76,-200 147.76,-196.5 147.76,-203.5"/>
+</g>
+<!-- l_player_x_filter -->
+<g id="node4" class="node">
+<title>l_player_x_filter</title>
+<polygon fill="lightblue" stroke="black" points="155,-135 37,-135 37,-99 155,-99 155,-135"/>
+<text text-anchor="middle" x="96" y="-113.3" font-family="Times,serif" font-size="14.00">player_x_filter</text>
+</g>
+<!-- l_random_player&#45;&gt;l_player_x_filter -->
+<g id="edge6" class="edge">
+<title>l_random_player&#45;&gt;l_player_x_filter</title>
+<path fill="none" stroke="black" d="M81.82,-181.82C84.18,-171.19 87.27,-157.31 89.95,-145.2"/>
+<polygon fill="black" stroke="black" points="93.44,-145.67 92.19,-135.15 86.6,-144.16 93.44,-145.67"/>
+</g>
+<!-- l_player_o -->
+<g id="node3" class="node">
+<title>l_player_o</title>
+<polygon fill="lightblue" stroke="black" points="371.5,-218 294.5,-218 294.5,-182 371.5,-182 371.5,-218"/>
+<text text-anchor="middle" x="333" y="-196.3" font-family="Times,serif" font-size="14.00">player_o</text>
+</g>
+<!-- l_player_o_filter&#45;&gt;l_player_o -->
+<g id="edge4" class="edge">
+<title>l_player_o_filter&#45;&gt;l_player_o</title>
+<path fill="none" stroke="black" d="M276.36,-200C278.85,-200 281.34,-200 283.83,-200"/>
+<polygon fill="black" stroke="black" points="284.06,-203.5 294.06,-200 284.06,-196.5 284.06,-203.5"/>
+</g>
+<!-- l_referee -->
+<g id="node6" class="node">
+<title>l_referee</title>
+<polygon fill="lightblue" stroke="black" points="297,-52 229,-52 229,-16 297,-16 297,-52"/>
+<text text-anchor="middle" x="263" y="-30.3" font-family="Times,serif" font-size="14.00">referee</text>
+</g>
+<!-- l_player_o&#45;&gt;l_referee -->
+<g id="edge5" class="edge">
+<title>l_player_o&#45;&gt;l_referee</title>
+<path fill="none" stroke="black" d="M325.64,-181.76C313.37,-153.02 288.67,-95.13 274.22,-61.28"/>
+<polygon fill="black" stroke="black" points="277.41,-59.83 270.26,-52.01 270.97,-62.58 277.41,-59.83"/>
+</g>
+<!-- l_player_x -->
+<g id="node5" class="node">
+<title>l_player_x</title>
+<polygon fill="lightblue" stroke="black" points="250.5,-135 173.5,-135 173.5,-99 250.5,-99 250.5,-135"/>
+<text text-anchor="middle" x="212" y="-113.3" font-family="Times,serif" font-size="14.00">player_x</text>
+</g>
+<!-- l_player_x_filter&#45;&gt;l_player_x -->
+<g id="edge7" class="edge">
+<title>l_player_x_filter&#45;&gt;l_player_x</title>
+<path fill="none" stroke="black" d="M155.36,-117C157.85,-117 160.34,-117 162.83,-117"/>
+<polygon fill="black" stroke="black" points="163.06,-120.5 173.06,-117 163.06,-113.5 163.06,-120.5"/>
+</g>
+<!-- l_player_x&#45;&gt;l_referee -->
+<g id="edge8" class="edge">
+<title>l_player_x&#45;&gt;l_referee</title>
+<path fill="none" stroke="black" d="M222.82,-98.82C229.78,-87.76 238.96,-73.18 246.79,-60.75"/>
+<polygon fill="black" stroke="black" points="249.83,-62.48 252.2,-52.15 243.91,-58.75 249.83,-62.48"/>
+</g>
+<!-- l_draw -->
+<g id="node7" class="node">
+<title>l_draw</title>
+<polygon fill="lightblue" stroke="black" points="369,-52 315,-52 315,-16 369,-16 369,-52"/>
+<text text-anchor="middle" x="342" y="-30.3" font-family="Times,serif" font-size="14.00">draw</text>
+</g>
+<!-- l_referee&#45;&gt;l_draw -->
+<g id="edge1" class="edge">
+<title>l_referee&#45;&gt;l_draw</title>
+<path fill="none" stroke="black" d="M297.25,-34C299.71,-34 302.17,-34 304.63,-34"/>
+<polygon fill="black" stroke="black" points="304.73,-37.5 314.73,-34 304.73,-30.5 304.73,-37.5"/>
+</g>
+<!-- d_output -->
+<g id="node8" class="node">
+<title>d_output</title>
+<polygon fill="lightpink" stroke="black" points="411.75,-16 480.25,-16 504.65,-52 387.35,-52 411.75,-16"/>
+<text text-anchor="middle" x="446" y="-30.3" font-family="Times,serif" font-size="14.00">output</text>
+</g>
+<!-- l_draw&#45;&gt;d_output -->
+<g id="edge2" class="edge">
+<title>l_draw&#45;&gt;d_output</title>
+<path fill="none" stroke="black" d="M369.22,-34C375.85,-34 382.47,-34 389.1,-34"/>
+<polygon fill="black" stroke="black" points="389.51,-37.5 399.51,-34 389.51,-30.5 389.51,-37.5"/>
+</g>
+</g>
+</svg>
