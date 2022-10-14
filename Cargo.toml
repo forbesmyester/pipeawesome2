@@ -2,6 +2,8 @@
 name = "pipeawesome2"
 version = "0.1.3"
 authors = ["Matthew Forrester <matthew.forrester@speechmarks.com>"]
+description = "Loops, branches and joins to UNIX pipes… in a sane way…"
+license = "GPL-2.0"
 edition = "2018"
 
 [dependencies]
