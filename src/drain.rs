@@ -9,6 +9,7 @@ use crate::connectable::ConnectableAddOutputError;
 use super::motion::{ MotionError, MotionResult, MotionNotifications, Pull, Push, motion };
 
 use crate::{startable_control::StartableControl};
+use async_std::channel::Sender;
 use async_trait::async_trait;
 
 #[allow(clippy::new_without_default)]
@@ -54,25 +55,26 @@ impl Connectable for Drain {
 
 #[async_trait]
 impl StartableControl for Drain {
-    async fn start(&mut self) -> MotionResult<usize> {
+    async fn start(&mut self, spy: Option<Sender<crate::motion::SpyMessage>>) -> MotionResult<usize> {
 
+        assert!(spy.is_none());
 
         self.started = true;
         if let Some(pull) = std::mem::take(&mut self.stdin) {
 
             let push = match (pull.journey(), std::mem::take(&mut self.write_location)) {
-                (Some(PullJourney { src, dst }), Some(f)) if f == "-" => Push::Stdout(Journey { src: *src, dst: *dst, breakable: Breakable::Terminate }, async_std::io::stdout()),
-                (Some(PullJourney { src, dst }), Some(f)) if f == "_" => Push::Stderr(Journey { src: *src, dst: *dst, breakable: Breakable::Terminate }, async_std::io::stderr()),
+                (Some(PullJourney { src, dst }), Some(f)) if f == "-" => Push::Stdout(Journey { src: *src, src_port: None, dst: *dst, breakable: Breakable::Terminate }, async_std::io::stdout()),
+                (Some(PullJourney { src, dst }), Some(f)) if f == "_" => Push::Stderr(Journey { src: *src, src_port: None, dst: *dst, breakable: Breakable::Terminate }, async_std::io::stderr()),
                 (Some(PullJourney { src, dst }), Some(filename)) => {
                     let breakable = Breakable::Terminate;
                     let file = async_std::fs::File::create(filename).await
                         .map_err(|e| MotionError::OpenIOError(PullJourney { src: *src, dst: *dst }, Instant::now(), e))?;
-                    Push::File(Journey { src: *src, dst: *dst, breakable }, async_std::io::BufWriter::new(file))
+                    Push::File(Journey { src: *src, src_port: None, dst: *dst, breakable }, async_std::io::BufWriter::new(file))
                 },
                 _ => Push::None,
             };
 
-            return motion(pull, MotionNotifications::empty(), push).await
+            return motion(pull, MotionNotifications::empty(), None, push).await
         }
         MotionResult::Err(MotionError::NoneError)
     }

@@ -1,5 +1,6 @@
 // use types::{Pull, MotionResult, IOData};
 use crate::connectable::Breakable;
+use crate::connectable::OutputPort;
 use std::time::Instant;
 use async_std::channel::{Receiver, RecvError, SendError, Sender, TryRecvError};
 use futures::AsyncRead;
@@ -44,6 +45,15 @@ impl ReadSplitControl {
 }
 
 
+#[derive(Debug, PartialEq)]
+pub struct SpyMessage {
+    pub src: usize,
+    pub dst: usize,
+    pub src_port: OutputPort,
+    pub msg: IODataWrapper,
+}
+
+
 impl Default for ReadSplitControl {
     fn default() -> Self {
         Self::new()
@@ -53,6 +63,7 @@ impl Default for ReadSplitControl {
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub struct Journey {
     pub src: usize,
+    pub src_port: Option<OutputPort>,
     pub dst: usize,
     pub breakable: Breakable,
 }
@@ -64,8 +75,8 @@ impl Journey {
 }
 
 impl PullJourney {
-    pub fn as_journey(&self, breakable: Breakable) -> Journey {
-        Journey { src: self.src, dst: self.dst, breakable }
+    pub fn as_journey(&self, breakable: Breakable, src_port: Option<OutputPort>) -> Journey {
+        Journey { src: self.src, src_port, dst: self.dst, breakable }
     }
 }
 
@@ -153,6 +164,7 @@ pub enum MotionError {
     OutputClosed(Journey, Instant, OutputClosedReason, IOData),
     MonitorReadError(JourneySource, Instant, SendError<MonitorMessage>),
     MonitorWriteError(PullJourney, Instant, SendError<MonitorMessage>),
+    SpyWriteError(Instant, SendError<SpyMessage>),
     LaunchSpawnError(Option<String>),
     NoneError,
 }
@@ -170,6 +182,7 @@ impl std::fmt::Display for MotionError {
             MotionError::OutputClosed(_, _, OutputClosedReason::ChannelClosed, _) => write!(f, "MotionError::OutputClosed: ChannelClosed"),
             MotionError::MonitorReadError(_, _, a) => write!(f, "MotionError::MonitorReadError: {}", a),
             MotionError::MonitorWriteError(_, _, a) => write!(f, "MotionError::MonitorWriteError: {}", a),
+            MotionError::SpyWriteError(_, a) => write!(f, "MotionError::SpyWriteError: {}", a),
             MotionError::LaunchSpawnError(cmd) => {
                 match cmd {
                     Some(cmd) => write!(f, "MotionError::LaunchSpawnError: Could not run program {}", cmd),
@@ -193,38 +206,45 @@ impl MotionError {
             MotionError::OutputClosed(_, i, ..) => Some(i),
             MotionError::MonitorReadError(_, i, ..) => Some(i),
             MotionError::MonitorWriteError(_, i, ..) => Some(i),
+            MotionError::SpyWriteError(i, ..) => Some(i),
             MotionError::LaunchSpawnError(_) => None,
             MotionError::NoneError => None
         }
     }
 
-    pub fn journey(&self) -> Option<&Journey> {
+    pub fn journey(&self) -> Option<Journey> {
         match self {
             MotionError::ReadIOError(_j, ..) => None,
-            MotionError::CloseIOError(j, ..) => Some(j),
+            MotionError::CloseIOError(j, ..) => Some(j.clone()),
             MotionError::OpenIOError(_j, ..) => None,
-            MotionError::WriteIOError(j, ..) => Some(j),
-            MotionError::RecvError(j, ..) => Some(j),
-            MotionError::SendError(j, ..) => Some(j),
-            MotionError::OutputClosed(j, ..) => Some(j),
+            MotionError::WriteIOError(j, ..) => Some(j.clone()),
+            MotionError::RecvError(j, ..) => Some(j.clone()),
+            MotionError::SendError(j, ..) => Some(j.clone()),
+            MotionError::OutputClosed(j, ..) => Some(j.clone()),
             MotionError::MonitorReadError(..) => None,
-            MotionError::MonitorWriteError(_j, ..) => None,
+            MotionError::MonitorWriteError(j, ..) => Some(j.as_journey(Breakable::Terminate, None)),
+            MotionError::SpyWriteError(_i, SendError(e)) => {
+                return Some(Journey { src: e.src, src_port: Some(e.src_port), dst: e.dst, breakable: Breakable::Terminate })
+            },
             MotionError::LaunchSpawnError(_) => None,
             MotionError::NoneError => None
         }
     }
 
-    pub fn pull_journey(&self) -> Option<&PullJourney> {
+    pub fn pull_journey(&self) -> Option<PullJourney> {
         match self {
-            MotionError::ReadIOError(j, ..) => Some(j),
+            MotionError::ReadIOError(j, ..) => Some(j.clone()),
             MotionError::CloseIOError(_j, ..) => None,
-            MotionError::OpenIOError(j, ..) => Some(j),
+            MotionError::OpenIOError(j, ..) => Some(j.clone()),
             MotionError::WriteIOError(_j, ..) => None,
             MotionError::RecvError(_j, ..) => None,
             MotionError::SendError(_j, ..) => None,
             MotionError::OutputClosed(_j, ..) => None,
             MotionError::MonitorReadError(..) => None,
-            MotionError::MonitorWriteError(j, ..) => Some(j),
+            MotionError::MonitorWriteError(j, ..) => Some(j.clone()),
+            MotionError::SpyWriteError(_i, SendError(e)) => {
+                Some(PullJourney { src: e.src, dst: e.dst  })
+            },
             MotionError::LaunchSpawnError(_) => None,
             MotionError::NoneError => None
         }
@@ -241,6 +261,7 @@ impl MotionError {
             MotionError::OutputClosed(Journey { src, .. }, ..) => Some(src),
             MotionError::MonitorReadError(JourneySource { src }, ..) => Some(src),
             MotionError::MonitorWriteError(PullJourney { src, .. }, ..) => Some(src),
+            MotionError::SpyWriteError(_i, SendError(SpyMessage { src, .. })) => Some(&src),
             MotionError::LaunchSpawnError(_) => None,
             MotionError::NoneError => None
         }
@@ -257,6 +278,7 @@ impl PartialEq for MotionError {
             (MotionError::SendError(j, _, a), MotionError::SendError(j2, _, a2)) => (j == j2) && (a == a2),
             (MotionError::MonitorReadError(j, _, a), MotionError::MonitorReadError(j2, _, a2)) => (j == j2) && (a == a2),
             (MotionError::MonitorWriteError(j, _, a), MotionError::MonitorWriteError(j2, _, a2)) => (j == j2) && (a == a2),
+            (MotionError::SpyWriteError(_, a), MotionError::SpyWriteError(_, a2)) => a == a2,
             (MotionError::NoneError, MotionError::NoneError) => true,
             _ => false,
         }
@@ -344,16 +366,6 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
         motion_read_buffer(rd, overflow).await.map(do_match_stuff).map_err(|e| MotionError::ReadIOError(j, Instant::now(), e))
     }
 
-    // let id: Option<usize> = match &stdin {
-    //     Pull::None => None,
-    //     Pull::Mock(id, ..) => Some(*id),
-    //     Pull::Receiver(id, ..) => Some(*id),
-    //     Pull::CmdStderr(id, ..) => Some(*id),
-    //     Pull::CmdStdout(id, ..) => Some(*id),
-    //     Pull::Stdin(id, ..) => Some(*id),
-    //     Pull::File(id, ..) => Some(*id),
-    // };
-
     match (stdin, do_try) {
         (Pull::None, false) => Ok(IODataWrapper::Finished),
         (Pull::Mock(_j, v), _) => Ok(v.pop_front().map(IODataWrapper::IOData).unwrap_or(IODataWrapper::Finished)),
@@ -372,16 +384,7 @@ pub async fn motion_read(stdin: &mut Pull, do_try: bool) -> MotionResult<IODataW
         (Pull::File(j, rd, overflow), false) => motion_read_buffer_wrapper(rd, overflow, *j).await,
         (_, true) => panic!("Only Pull::Receiver and Pull::Mock can do a motion_read with do_try")
     }
-    // match &out {
-    //     Ok(IODataWrapper::IOData(o)) => { println!(
-    //         "motion_read({:?}, {:?}) - iodata",
-    //         id,
-    //         String::from_utf8_lossy(&o.0)
-    //     ) },
-    //     Ok(IODataWrapper::Finished) => { println!("motion_read() - finished") }
-    //     Ok(IODataWrapper::Skipped) => { println!("motion_read() - skipped") }
-    //     Err(e) => { println!("motion_read({:?}) - error", e) }
-    // };
+
 }
 
 
@@ -408,6 +411,7 @@ pub async fn motion_write(stdout: &mut Push, data: IOData) -> MotionResult<()> {
         (Push::File(j, wr), IOData(data)) => Ok(wr.write_all(&data).await.map_err(|e| e_map_io(*j, e, IOData(data)))?),
         (Push::Stderr(j, wr), IOData(data)) => Ok(wr.write_all(&data).await.map_err(|e| e_map_io(*j, e, IOData(data)))?),
     }
+
 }
 
 
@@ -454,7 +458,7 @@ pub struct MotionWorkerResult {
     pub read: bool,
 }
 
-pub async fn motion_worker(pull: &mut Pull, monitor: &mut MotionNotifications, pushs: &mut Vec<Push>, do_try_read: bool) -> MotionResult<MotionWorkerResult> {
+pub async fn motion_worker(pull: &mut Pull, monitor: &mut MotionNotifications, pushs: &mut Vec<Push>, spy: &mut Option<Sender<SpyMessage>>, do_try_read: bool) -> MotionResult<MotionWorkerResult> {
 
     let data = motion_read(pull, do_try_read).await?;
     if data == IODataWrapper::Skipped {
@@ -497,6 +501,18 @@ pub async fn motion_worker(pull: &mut Pull, monitor: &mut MotionNotifications, p
                 }
             },
         }?;
+
+        let journey_details = match &push.journey().map(|j| (j.src, j.dst, j.src_port)) {
+            Some((s, d, Some(p))) => Some((*s, *d, *p)),
+            _ => None,
+        };
+
+        if let (iow, Some(spy), Some((src, dst, src_port))) = (data.clone(), &spy, journey_details) {
+            // println!("HAVE SPY: {:?} {:?} {:?}", spy, &r, journey_src);
+            let spy_msg = SpyMessage { src, msg: iow.clone(), dst, src_port };
+            spy.send(spy_msg).await.map_err(|e| MotionError::SpyWriteError(Instant::now(), e))?;
+        }
+
     }
 
     if let Some(m) = monitor.written.as_ref() {
@@ -516,13 +532,13 @@ pub async fn motion_worker(pull: &mut Pull, monitor: &mut MotionNotifications, p
 }
 
 
-pub async fn motion(mut pull: Pull, mut monitor: MotionNotifications, push: Push) -> MotionResult<usize> {
+pub async fn motion(mut pull: Pull, mut monitor: MotionNotifications, mut spy: Option<Sender<SpyMessage>>, push: Push) -> MotionResult<usize> {
     let mut read_count = 0;
     let mut pushs = vec![push];
 
     loop {
 
-        let motion_one_result = motion_worker(&mut pull, &mut monitor, &mut pushs, false).await?;
+        let motion_one_result = motion_worker(&mut pull, &mut monitor, &mut pushs, &mut spy, false).await?;
         if motion_one_result.read {
             read_count += 1;
         }
@@ -578,7 +594,9 @@ fn test_motion_worker_output_closed_unbreakable() {
             written: Some(monitor_written_sender),
         };
 
-        let r1 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, false).await?;
+        let (mut spy_send, mut spy_recv) = bounded(8);
+
+        let r1 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, &mut Some(spy_send), false).await?;
 
         let mut pull_reader_5 = Pull::Receiver(PullJourney { src: 1, dst: 5 }, output_read_1);
         let mut pull_reader_6 = Pull::Receiver(PullJourney { src: 2, dst: 6 }, output_read_2);
@@ -605,7 +623,7 @@ fn test_motion_worker_output_closed_unbreakable() {
                     read: r1.read,
                     finished: r1.finished,
                 },
-                motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, false).await
+                motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, false).await
             )
         )
 
@@ -654,7 +672,7 @@ fn test_motion_worker_output_closed_breakable() {
             written: Some(monitor_written_sender),
         };
 
-        let r1 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, false).await?;
+        let r1 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, &mut None, false).await?;
 
         let mut pull_reader_5 = Pull::Receiver(PullJourney { src: 1, dst: 5 }, output_read_1);
         let mut pull_reader_6 = Pull::Receiver(PullJourney { src: 2, dst: 6 }, output_read_2);
@@ -670,10 +688,10 @@ fn test_motion_worker_output_closed_breakable() {
         monitor_written_data.push(montitor_written_receiver.recv().await.unwrap());
 
         drop(pull_reader_5);
-        let r2 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, false).await?;
+        let r2 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, false).await?;
         r_6.push(motion_read(&mut pull_reader_6, false).await.unwrap());
         drop(pull_reader_6);
-        let r3 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, true).await?;
+        let r3 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, true).await?;
 
         Ok((r_5, r_6, r1, r2, r3))
 
@@ -729,7 +747,7 @@ fn test_motion_worker_skipped_input() {
             written: Some(monitor_written_sender),
         };
 
-        motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, false).await?;
+        motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, false).await?;
 
         let mut pull_reader_5 = Pull::Receiver(PullJourney { src: 1, dst: 5 }, output_read_1);
         let mut pull_reader_6 = Pull::Receiver(PullJourney { src: 2, dst: 6 }, output_read_2);
@@ -746,7 +764,7 @@ fn test_motion_worker_skipped_input() {
         monitor_written_data.push(montitor_written_receiver.recv().await.unwrap());
 
 
-        let r2 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, true).await;
+        let r2 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, true).await;
         drop(motion_pull_send);
 
         Ok(
@@ -758,7 +776,7 @@ fn test_motion_worker_skipped_input() {
                     monitor_written_data,
                 },
                 r2,
-                motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, true).await
+                motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, true).await
             )
         )
 

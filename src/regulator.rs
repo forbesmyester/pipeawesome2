@@ -5,6 +5,8 @@ use crate::connectable::Breakable;
 use crate::connectable::OutputPort;
 use crate::connectable::ConnectableAddOutputError;
 use crate::connectable::ConnectableAddInputError;
+use crate::motion::SpyMessage;
+use async_std::channel::Sender;
 use async_std::channel::{SendError, Receiver, bounded};
 use super::motion::{ MotionResult, MotionNotifications, Pull, Push, motion_close, motion_worker };
 use crate::startable_control::StartableControl;
@@ -66,8 +68,8 @@ impl Connectable for Regulator {
             return Err(ConnectableAddOutputError::AlreadyAllocated(port));
         }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
-        let journey = Journey { src: src_id, dst: dst_id, breakable };
+        let journey = Journey { src: src_id, src_port: Some(port), dst: dst_id, breakable };
+        self.stdout = Some(Push::IoSender(journey.clone(), child_stdout_push_channel));
         Ok(Pull::Receiver(journey.as_pull_journey(), stdout_io_reciever_channel))
     }
 
@@ -89,15 +91,15 @@ impl Connectable for Regulator {
 #[async_trait]
 impl StartableControl for Regulator {
 
-    async fn start(&mut self) -> MotionResult<usize> {
-        self.start_secret().await
+    async fn start(&mut self, spy: Option<Sender<SpyMessage>>) -> MotionResult<usize> {
+        self.start_secret(spy).await
     }
 
 }
 
 impl Regulator {
 
-    async fn start_secret(&mut self) -> MotionResult<usize> {
+    async fn start_secret(&mut self, mut spy: Option<Sender<SpyMessage>>) -> MotionResult<usize> {
         assert!(!self.started);
 
         self.started = true;
@@ -116,7 +118,7 @@ impl Regulator {
             let breakable = stdout.journey().map(|j| j.breakable).unwrap_or(Breakable::Terminate);
             let mut stdouts = vec![stdout];
             loop {
-                match motion_worker(&mut stdin, &mut notifications, &mut stdouts, false).await {
+                match motion_worker(&mut stdin, &mut notifications, &mut stdouts, &mut spy, false).await {
                     Ok(result) => {
                         if result.finished {
                             for push in &mut self.stdout {

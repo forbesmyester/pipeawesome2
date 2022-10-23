@@ -1,5 +1,6 @@
 use crate::motion::PullJourney;
 use crate::motion::MotionError;
+use crate::motion::SpyMessage;
 use std::time::Instant;
 use crate::motion::ReadSplitControl;
 use crate::motion::Journey;
@@ -8,6 +9,7 @@ use crate::connectable::Breakable;
 use crate::connectable::OutputPort;
 use crate::connectable::ConnectableAddOutputError;
 use crate::connectable::ConnectableAddInputError;
+use async_std::channel::Sender;
 use async_std::channel::{SendError, Receiver, bounded};
 use super::motion::{ MotionResult, MotionNotifications, Pull, Push, motion_close, motion_worker };
 use crate::startable_control::StartableControl;
@@ -67,8 +69,8 @@ impl Connectable for Faucet {
             return Err(ConnectableAddOutputError::AlreadyAllocated(port));
         }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
-        let journey = Journey { src: src_id, dst: dst_id, breakable };
+        let journey = Journey { src: src_id, src_port: Some(port), dst: dst_id, breakable };
+        self.stdout = Some(Push::IoSender(journey.clone(), child_stdout_push_channel));
         self.pull_journey = Some(journey.as_pull_journey());
         Ok(Pull::Receiver(journey.as_pull_journey(), stdout_io_reciever_channel))
     }
@@ -84,7 +86,7 @@ impl Connectable for Faucet {
 #[async_trait]
 impl StartableControl for Faucet {
 
-    async fn start(&mut self) -> MotionResult<usize> {
+    async fn start(&mut self, spy: Option<Sender<SpyMessage>>) -> MotionResult<usize> {
 
         let read_location = std::mem::take(&mut self.read_location);
         self.stdin = Some(match (self.pull_journey, read_location) {
@@ -97,7 +99,7 @@ impl StartableControl for Faucet {
             _ => Pull::None,
         });
 
-        self.start_secret().await
+        self.start_secret(spy).await
 
     }
 
@@ -105,7 +107,7 @@ impl StartableControl for Faucet {
 
 impl Faucet {
 
-    async fn start_secret(&mut self) -> MotionResult<usize> {
+    async fn start_secret(&mut self, mut spy: Option<Sender<SpyMessage>>) -> MotionResult<usize> {
         assert!(!self.started);
 
         self.started = true;
@@ -124,7 +126,7 @@ impl Faucet {
             let breakable = stdout.journey().map(|j| j.breakable).unwrap_or(Breakable::Terminate);
             let mut stdouts = vec![stdout];
             loop {
-                match motion_worker(&mut stdin, &mut notifications, &mut stdouts, false).await {
+                match motion_worker(&mut stdin, &mut notifications, &mut stdouts, &mut spy, false).await {
                     Ok(result) => {
                         if result.finished {
                             for push in &mut self.stdout {

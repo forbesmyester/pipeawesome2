@@ -6,6 +6,8 @@ use crate::connectable::ConnectableAddInputError;
 use crate::connectable::ConnectableAddOutputError;
 use crate::connectable::OutputPort;
 use crate::connectable::Connectable;
+use crate::motion::SpyMessage;
+use async_std::channel::Sender;
 use async_std::channel::bounded;
 use crate::motion;
 use crate::utils::{ remove_vec_vec, remove_vec_vec_index };
@@ -32,7 +34,7 @@ pub struct MotionOneResult {
     pub skipped: Vec<usize>,
 }
 
-async fn junction_motion_worker(pulls: &mut Vec<Pull>, pushs: &mut Vec<Push>) -> MotionResult<MotionOneResult> {
+async fn junction_motion_worker(pulls: &mut Vec<Pull>, pushs: &mut Vec<Push>, spy: &mut Option<Sender<SpyMessage>>) -> MotionResult<MotionOneResult> {
 
     let mut finished_pulls = vec![];
     let mut read_from = vec![];
@@ -43,7 +45,7 @@ async fn junction_motion_worker(pulls: &mut Vec<Pull>, pushs: &mut Vec<Push>) ->
         // If we have finished reading that particular pull
         if finished_pulls.contains(&pull_index) { continue; }
 
-        let r = motion_worker(pull, &mut notifications, pushs, true).await?;
+        let r = motion_worker(pull, &mut notifications, pushs, spy, true).await?;
         if !r.read {
             skipped.push(pull_index);
         } else {
@@ -95,7 +97,7 @@ impl Junction {
     }
 
 
-    async fn iteration(&mut self, back_off: &mut BackOff) -> MotionResult<(bool, usize)> {
+    async fn iteration(&mut self, spy: &mut Option<Sender<SpyMessage>>, back_off: &mut BackOff) -> MotionResult<(bool, usize)> {
         let mut finished = vec![];
         let mut any_read = false;
         let mut read_count = 0;
@@ -104,6 +106,7 @@ impl Junction {
             let motion_one_results = junction_motion_worker(
                 si,
                 &mut self.stdout,
+                spy,
             ).await?;
             read_count += motion_one_results.read_from.len();
             for fin in motion_one_results.finished_pulls.iter() {
@@ -141,7 +144,7 @@ impl Connectable for Junction {
 
     fn add_output(&mut self, _port: OutputPort, breakable: Breakable, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout.push(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
+        self.stdout.push(Push::IoSender(Journey { src: src_id, src_port: Some(OutputPort::Out), dst: dst_id, breakable }, child_stdout_push_channel));
         Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, stdout_io_reciever_channel))
     }
 
@@ -156,7 +159,7 @@ impl Connectable for Junction {
 #[async_trait]
 impl StartableControl for Junction {
 
-    async fn start(&mut self) -> MotionResult<usize> {
+    async fn start(&mut self, mut spy: Option<Sender<SpyMessage>>) -> MotionResult<usize> {
         assert!(!self.started);
         self.started = true;
 
@@ -166,7 +169,7 @@ impl StartableControl for Junction {
         let mut read_count = 0;
 
         loop {
-            match self.iteration(&mut back_off).await {
+            match self.iteration(&mut spy, &mut back_off).await {
                 Ok((true, n)) => {
                     return Ok(read_count + n);
                 }

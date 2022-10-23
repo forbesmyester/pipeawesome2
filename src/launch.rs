@@ -1,5 +1,6 @@
 // use pipeawesome2::motion::{Pull, MotionResult, IOData};
 use crate::motion::PullJourney;
+use crate::motion::SpyMessage;
 use std::time::Instant;
 use crate::motion::Journey;
 use crate::connectable::ConnectableAddInputError;
@@ -55,7 +56,7 @@ impl <E: IntoIterator<Item = (K, V)>,
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Err));
                 }
                 let (child_stdout_push_channel, chan_rx) = bounded(1);
-                self.stderr = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
+                self.stderr = Some(Push::IoSender(Journey { src: src_id, src_port: Some(port), dst: dst_id, breakable }, child_stdout_push_channel));
                 Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, chan_rx))
             },
             OutputPort::Exit => {
@@ -63,7 +64,7 @@ impl <E: IntoIterator<Item = (K, V)>,
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Exit));
                 }
                 let (child_exit_status_push_channel, chan_rx) = bounded(1);
-                self.exit_status = Some((Journey { src: src_id, dst: dst_id, breakable }, child_exit_status_push_channel));
+                self.exit_status = Some((Journey { src: src_id, src_port: Some(port), dst: dst_id, breakable }, child_exit_status_push_channel));
                 Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, chan_rx))
             },
             OutputPort::Out => {
@@ -71,7 +72,7 @@ impl <E: IntoIterator<Item = (K, V)>,
                     return Err(ConnectableAddOutputError::AlreadyAllocated(OutputPort::Out));
                 }
                 let (child_stdout_push_channel, chan_rx) = bounded(1);
-                self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
+                self.stdout = Some(Push::IoSender(Journey { src: src_id, src_port: Some(port), dst: dst_id, breakable }, child_stdout_push_channel));
                 Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, chan_rx))
             }
         }
@@ -147,7 +148,7 @@ impl <E: IntoIterator<Item = (K, V)>,
     }
 
 
-    pub async fn start(&mut self) -> MotionResult<usize> {
+    pub async fn start(&mut self, spy: Option<Sender<SpyMessage>>) -> MotionResult<usize> {
 
         assert!(!self.launched);
 
@@ -187,12 +188,12 @@ impl <E: IntoIterator<Item = (K, V)>,
         let child_stdin_push = match std::mem::take(&mut child.stdin) {
             Some(stdin) => {
                 let src = child_stdin_pull.journey().map(|j| j.src).unwrap_or(self.id);
-                Push::CmdStdin(Journey { src, dst: self.id, breakable: Breakable::Finish }, stdin)
+                Push::CmdStdin(Journey { src, dst: self.id, src_port: None, breakable: Breakable::Finish }, stdin)
             },
             None => Push::None,
         };
 
-        let r_input = motion(child_stdin_pull, MotionNotifications::empty(), child_stdin_push);
+        let r_input = motion(child_stdin_pull, MotionNotifications::empty(), None, child_stdin_push);
 
         let (stdout_pull, stdout_push) = match (std::mem::take(&mut child.stdout), std::mem::take(&mut self.stdout)) {
             (Some(stdout), Some(push)) => {
@@ -208,7 +209,7 @@ impl <E: IntoIterator<Item = (K, V)>,
             }
         };
 
-        let r2 = motion(stdout_pull, MotionNotifications::empty(), stdout_push);
+        let r2 = motion(stdout_pull, MotionNotifications::empty(), spy.clone(), stdout_push);
 
         let (stderr_pull, stderr_push) = match (std::mem::take(&mut child.stderr), std::mem::take( &mut self.stderr)) {
             (Some(stderr), Some(push)) => {
@@ -224,7 +225,7 @@ impl <E: IntoIterator<Item = (K, V)>,
             }
         };
 
-        let r3 = motion(stderr_pull, MotionNotifications::empty(), stderr_push);
+        let r3 = motion(stderr_pull, MotionNotifications::empty(), spy, stderr_push);
 
         let r_out_prep: ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>) = r_input.join(r2).join(r3).await;
 

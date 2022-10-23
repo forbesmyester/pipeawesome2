@@ -5,6 +5,7 @@ use crate::connectable::OutputPort;
 use crate::connectable::ConnectableAddOutputError;
 use crate::connectable::ConnectableAddInputError;
 use crate::connectable::Connectable;
+use crate::motion::SpyMessage;
 use async_std::{channel::SendError, prelude::*};
 
 use async_std::channel::{bounded, unbounded, Receiver, Sender };
@@ -32,7 +33,7 @@ impl Connectable for Buffer {
     fn add_output(&mut self, port: OutputPort, breakable: Breakable, src_id: usize, dst_id: usize) -> std::result::Result<Pull, ConnectableAddOutputError> {
         if self.stdout.is_some() { return Err(ConnectableAddOutputError::AlreadyAllocated(port)); }
         let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(self.stdout_size);
-        self.stdout = Some(Push::IoSender(Journey { src: src_id, dst: dst_id, breakable }, child_stdout_push_channel));
+        self.stdout = Some(Push::IoSender(Journey { src: src_id, src_port: Some(port), dst: dst_id, breakable }, child_stdout_push_channel));
         Ok(Pull::Receiver(PullJourney { src: src_id, dst: dst_id }, stdout_io_reciever_channel))
     }
 
@@ -77,7 +78,7 @@ impl Buffer {
 
 #[async_trait]
 impl StartableControl for Buffer {
-    async fn start(&mut self) -> MotionResult<usize> {
+    async fn start(&mut self, spy: Option<Sender<SpyMessage>>) -> MotionResult<usize> {
 
         let (unbounded_snd, unbounded_rcv) = unbounded();
         let (monitor_i_snd, monitor_i_rcv): (Sender<MonitorMessage>, Receiver<MonitorMessage>) = bounded(8);
@@ -87,7 +88,7 @@ impl StartableControl for Buffer {
         let stdout = std::mem::take(&mut self.stdout).ok_or(MotionError::NoneError)?;
 
         let push_a = Push::Sender(
-            Journey { src: 0, dst: 0, breakable: stdout.journey().ok_or(MotionError::NoneError)?.breakable },
+            Journey { src: 0, dst: 0, src_port: None, breakable: stdout.journey().ok_or(MotionError::NoneError)?.breakable },
             unbounded_snd
         );
         let pull_b = Pull::Receiver(
@@ -98,11 +99,13 @@ impl StartableControl for Buffer {
         let r_a = motion(
             stdin,
             MotionNotifications::written(monitor_i_snd),
+            None,
             push_a
         );
         let r_b = motion(
             pull_b,
             MotionNotifications::read(monitor_o_snd),
+            spy,
             stdout,
         );
 
@@ -262,127 +265,3 @@ fn do_stuff() {
     use async_std::task;
     println!("R: {:?}", task::block_on(test_buffer_impl()));
 }
-
-// struct BufferReturn {
-//     stdout: Push, // Pull::IoReceiver || Pull::None
-//     stderr: Push, // Pull::IoReceiver || Pull::None
-//     future: Future<Output = ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>)>,
-// }
-// 
-// 
-// impl <E: IntoIterator<Item = (K, V)>,
-//           A: IntoIterator<Item = R>,
-//           R: AsRef<OsStr>,
-//           O: AsRef<OsStr>,
-//           K: AsRef<OsStr>,
-//           V: AsRef<OsStr>,
-//           P: AsRef<Path>> Buffer {
-//     fn new(
-//         stdin: Option<PullConfiguration>,
-//         launch_spec: Buffer<E, P, O, A, K, V, R>,
-//     ) -> Buffer {
-//         Buffer {
-//             stdout: None,
-//             stderr: None,
-//             stdin,
-//             launch_spec,
-//         }
-//     }
-// }
-// 
-
-// async fn get_command<E: IntoIterator<Item = (K, V)>,
-//           A: IntoIterator<Item = R>,
-//           R: AsRef<OsStr>,
-//           O: AsRef<OsStr>,
-//           K: AsRef<OsStr>,
-//           V: AsRef<OsStr>,
-//           P: AsRef<Path>>(stdin: Option<PullConfiguration>, launch_spec: Buffer<E, P, O, A, K, V, R>, outputs: BufferOutputs, monitoring: Sender<MonitorMessage>) -> BufferReturn
-// {
-// 
-//     let outputs: (bool, bool) = match outputs {
-//         BufferOutputs::STDOUT => (true, false),
-//         BufferOutputs::STDOUT_AND_STDERR => (true, true),
-//         BufferOutputs::STDERR => (false, true),
-//     };
-// 
-//     let current_path: &Path = std::env::current_dir().expect("Unable to identify current $PATH").as_path();
-//     let cmd = &launch_spec.command;
-// 
-//     let mut child_builder = aip::Command::new(cmd);
-// 
-//     child_builder.stdin(if stdin.is_some() { std::process::Stdio::piped() } else { std::process::Stdio::null() } );
-//     child_builder.stderr(if outputs.1 { std::process::Stdio::piped() } else { std::process::Stdio::null() });
-//     child_builder.stdout(if outputs.0 { std::process::Stdio::piped() } else { std::process::Stdio::null() });
-// 
-//     match launch_spec.path {
-//         Some(p) => { child_builder.current_dir(p); },
-//         None => ()
-//     };
-// 
-//     match launch_spec.env {
-//         Some(env) => { child_builder.envs(env.into_iter()); }
-//         None => { child_builder.envs(std::env::vars_os()); }
-//     }
-// 
-//     match launch_spec.args {
-//         Some(args) => { child_builder.args(args); },
-//         None => ()
-//     };
-// 
-//     let child = child_builder.spawn().unwrap();
-// 
-// 
-//     let mut child_stdin_pull = [match stdin {
-//         Some(stdin) => { stdin },
-//         None => PullConfiguration { priority: 0, id: 0, pull: Pull::None }
-//     }];
-// 
-//     let mut child_stdin_push = [match child.stdin {
-//         Some(stdin) => Push::CmdStdin(stdin),
-//         None => Push::None,
-//     }];
-// 
-//     // let mut io_sender = [];
-//     let r1 = motion(&mut child_stdin_pull, monitoring.clone(), &mut child_stdin_push);
-// 
-//     let mut child_stdout_pull = [match child.stdout {
-//         Some(stdout) => PullConfiguration { priority: 2, id: 2, pull: Pull::CmdStdout(stdout) },
-//         None => PullConfiguration { priority: 2, id: 2, pull: Pull::None },
-//     }];
-// 
-//     let mut child_stderr_pull = [match child.stderr {
-//         Some(stderr) => PullConfiguration { priority: 2, id: 2, pull: Pull::CmdStderr(stderr) },
-//         None => PullConfiguration { priority: 2, id: 2, pull: Pull::None },
-//     }];
-// 
-//     let (child_stdout_push_channel, stdout_io_reciever_channel) = bounded(1);
-//     let (child_stderr_push_channel, stderr_io_reciever_channel) = bounded(1);
-// 
-//     let mut child_stdout_push = [Push::IoSender(child_stdout_push_channel)];
-//     let mut child_stderr_push = [Push::IoSender(child_stderr_push_channel)];
-// 
-//     let r2 = motion(&mut child_stdout_pull, monitoring.clone(), &mut child_stdout_push);
-//     let r3 = motion(&mut child_stderr_pull, monitoring.clone(), &mut child_stderr_push);
-// 
-//     fn structure_motion_result(input: ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>)) -> MotionResult<usize> {
-//         match input {
-//             ((MotionResult::Ok(stdin_count), MotionResult::Ok(_)), MotionResult::Ok(_)) => Ok(stdin_count),
-//             _ => Err(MotionError::NoneError),
-//         }
-//     }
-//     // let f = structure_motion_result(r1.join(r2).join(r3).await);
-//     let f: Future<Output = ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>)> = r1.join(r2).join(r3);
-// 
-//     // BufferReturn {
-//     //     stdout: Push::IoReceiver(stdout_io_reciever_channel),
-//     //     stderr: Push::IoReceiver(stderr_io_reciever_channel),
-//     //     future: f,
-//     // }
-//     // struct CommandStats {
-//     // }
-//     // let mut cmd_stdin = Push::CmdStdin(cmd.stdin.unwrap());
-//     // let mut cmd_stdin = Pull::CmdStderr(child.stderr.unwrap());
-//     // let mut cmd_stdout = Pull::CmdStdout(child.stdout.unwrap());
-//     f
-// }

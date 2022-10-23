@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use crate::connectable::Breakable;
+use crate::motion::SpyMessage;
 use std::time::Instant;
 use crate::config::{Config, DeserializedConnection};
 use crate::config::RegulatorConfig;
@@ -10,6 +11,7 @@ use crate::connectable::ConnectableError;
 use crate::connectable::{ Connectable, InputPort, OutputPort };
 use crate::{buffer::{Buffer, BufferSizeMessage}, drain::Drain, faucet::Faucet, regulator::{Regulator, RegulatorControl}, junction::Junction, launch::Launch, motion::MotionError, startable_control::StartableControl};
 use std::collections::HashMap;
+use async_std::channel::Sender;
 use async_std::{channel::Receiver, prelude::*};
 
 type LaunchString = Launch<HashMap<String, String>, String, String, Vec<String>, String, String, String>;
@@ -107,7 +109,7 @@ pub struct Waiter {
     regulator_settings: HashMap<String, FaucetSettings>,
     id: usize,
     component_type_name_to_id: HashMap<ComponentType, HashMap<String, usize>>,
-    component_type_name_to_id_reverse: HashMap<usize, (ComponentType, String)>,
+    component_type_name_to_id_reverse: Option<HashMap<usize, (ComponentType, String)>>,
 }
 
 
@@ -186,13 +188,17 @@ impl Waiter {
             regulator_settings: HashMap::new(),
             id: 0,
             component_type_name_to_id: hm,
-            component_type_name_to_id_reverse: HashMap::new(),
+            component_type_name_to_id_reverse: Some(HashMap::new()),
         }
     }
 
 
     fn incr_id(&mut self, component_type: ComponentType, name: String) -> usize {
-        self.component_type_name_to_id_reverse.insert(self.id, (component_type, name.clone()));
+        match self.component_type_name_to_id_reverse.as_mut() {
+            Some(hm) => { hm.insert(self.id, (component_type, name.clone())); },
+            _ => {}
+        }
+        // self.component_type_name_to_id_reverse..as_ref().map(|hm| hm.insert(self.id, (component_type, name.clone())));
         let hm = self.component_type_name_to_id.get_mut(&component_type).unwrap();
         let inner_entry = hm.entry(name);
         inner_entry.or_insert(self.id);
@@ -208,7 +214,7 @@ impl Waiter {
 
     fn get_src_pull(&mut self, src_id: usize, dst_id: usize, output_port: OutputPort, breakable: Breakable) -> Result<Pull, ConnectableError> {
 
-        let r = match self.component_type_name_to_id_reverse.get(&src_id) {
+        let r = match self.component_type_name_to_id_reverse.as_ref().map(|x| x.get(&src_id)).flatten() {
             Some((ComponentType::Faucet, component_name)) => {
                 self.faucet.get_mut(component_name).map(|x| x.add_output(output_port, breakable, src_id, dst_id))
             },
@@ -238,7 +244,10 @@ impl Waiter {
     }
 
     pub fn id_to_component_type_name(&self, id: &usize) -> Option<&(ComponentType, String)> {
-        self.component_type_name_to_id_reverse.get(id)
+        if let Some(x) = &self.component_type_name_to_id_reverse {
+            return x.get(id);
+        }
+        None
     }
 
     pub fn join(&mut self, (src_id, output_port) : (usize, OutputPort), (dst_id, input_port) : (usize, InputPort)) -> Result<(), ConnectableError> {
@@ -246,7 +255,7 @@ impl Waiter {
         let pull = self.get_src_pull(src_id, dst_id, output_port, input_port.breakable)?;
         let input_priority = input_port.priority;
 
-        let res = match self.component_type_name_to_id_reverse.get(&dst_id) {
+        let res = match self.component_type_name_to_id_reverse.as_ref().map(|x| x.get(&dst_id)).flatten() {
             Some((ComponentType::Faucet, component_name)) => {
                 self.faucet.get_mut(component_name).map(|x| x.add_input(pull, input_priority))
             },
@@ -338,8 +347,12 @@ impl Waiter {
         Ok(regulator_settings_capture)
     }
 
+    pub fn get_id_to_component_type_name(&mut self) -> Option<HashMap<usize, (ComponentType, String)>>  {
+        std::mem::take(&mut self.component_type_name_to_id_reverse)
+    }
+
     #[allow(clippy::many_single_char_names)]
-    pub async fn start(&mut self) -> Result<usize, Vec<WaiterError>> {
+    pub async fn start(&mut self, spy: Option<Sender<SpyMessage>>) -> Result<usize, Vec<WaiterError>> {
         use futures::future::join_all;
 
         let start_instant = Instant::now();
@@ -357,15 +370,15 @@ impl Waiter {
         }
 
 
-        async fn start(component_type: ComponentType, name: &str, cntrl: &mut dyn StartableControl) -> Result<usize, WaiterError> {
-            match cntrl.start().await {
+        async fn start(component_type: ComponentType, name: &str, cntrl: &mut dyn StartableControl, spy: Option<Sender<SpyMessage>>) -> Result<usize, WaiterError> {
+            match cntrl.start(spy).await {
                 Err(e) => Err(WaiterError::CausedByError(component_type, name.to_string(), e)),
                 Ok(x) => Ok(x),
             }
         }
 
-        async fn start_launch(name: &str, cntrl: &mut LaunchString) -> Result<usize, WaiterError> {
-            match cntrl.start().await {
+        async fn start_launch(name: &str, cntrl: &mut LaunchString, spy: Option<Sender<SpyMessage>>) -> Result<usize, WaiterError> {
+            match cntrl.start(spy).await {
                 Err(e) => Err(WaiterError::CausedByError(ComponentType::Launch, name.to_string(), e)),
                 Ok(x) => Ok(x),
             }
@@ -376,14 +389,14 @@ impl Waiter {
         }
 
         let managed_regulators = join_all(self.regulator_settings().map_err(err_as_vec_err)?.into_iter().map(manage_regulator_from_buffers));
-        let faucets = join_all(self.faucet.iter_mut().map(|(n, f)| start(ComponentType::Faucet, n, f)));
+        let faucets = join_all(self.faucet.iter_mut().map(|(n, f)| start(ComponentType::Faucet, n, f, spy.clone())));
         let launch = join_all(self.launch.iter_mut().map(
-            |(n, l)| start_launch(n, l) )
+            |(n, l)| start_launch(n, l, spy.clone()) )
         );
-        let junction = join_all(self.junction.iter_mut().map(|(n, j)| start(ComponentType::Junction, n, j)));
-        let regulators = join_all(self.regulator.iter_mut().map(|(n, j)| start(ComponentType::Regulator, n, j)));
-        let buffers = join_all(self.buffer.iter_mut().map(|(n, b)| start(ComponentType::Buffer, n, b)));
-        let drain = join_all(self.drain.iter_mut().map(|(n, d)| start(ComponentType::Drain, n, d)));
+        let junction = join_all(self.junction.iter_mut().map(|(n, j)| start(ComponentType::Junction, n, j, spy.clone())));
+        let regulators = join_all(self.regulator.iter_mut().map(|(n, j)| start(ComponentType::Regulator, n, j, spy.clone())));
+        let buffers = join_all(self.buffer.iter_mut().map(|(n, b)| start(ComponentType::Buffer, n, b, spy.clone())));
+        let drain = join_all(self.drain.iter_mut().map(|(n, d)| start(ComponentType::Drain, n, d, None)));
 
         let (mut l, (mut r, (mut f, (mut m, (mut d, (mut b, mut j)))))) = launch.join(regulators.join(faucets.join(managed_regulators.join(drain.join(buffers.join(junction)))))).await;
 

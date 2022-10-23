@@ -4,7 +4,7 @@ use pipeawesome2::config_manip::add_junctions;
 use pipeawesome2::waiter::Waiter;
 use pipeawesome2::waiter::WaiterError;
 use pipeawesome2::config::ComponentType;
-use pipeawesome2::motion::Journey;
+use pipeawesome2::motion::{Journey, SpyMessage};
 use pipeawesome2::graph;
 use pipeawesome2::waiter::get_waiter;
 use pipeawesome2::config::Connection;
@@ -537,17 +537,20 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
 
 }
 
-fn waiter_error_to_string(waiter_err: WaiterError, waiter: &Waiter) -> String {
+fn waiter_error_to_string(waiter_err: WaiterError, id_to_component_type_name: &Option<HashMap<usize, (ComponentType, String)>>) -> String {
 
     fn component_type_name_to_string(ct: &ComponentType, n: &str) -> String {
         format!("{}:{}", ct, n)
     }
 
     let waiter_src: Option<(&ComponentType, &String)> = waiter_err.caused_by_error_source();
-    let motion_src: Option<&(ComponentType, String)> = waiter_err.caused_by_error().map(|x| x.journey_source()).flatten().map(|src| waiter.id_to_component_type_name(src)).flatten();
-    let motion_dst: Option<&(ComponentType, String)> = match waiter_err.caused_by_error().map(|x| x.journey()).flatten() {
-        Some(Journey { src: _, dst, breakable: _ }) => waiter.id_to_component_type_name(dst),
-        None => None
+    let motion_src: Option<&(ComponentType, String)> = match (id_to_component_type_name, waiter_err.caused_by_error().map(|err| err.journey_source()).flatten()) {
+        (Some(hm), Some(journey_source)) => hm.get(journey_source),
+        _ => None
+    };
+    let motion_dst: Option<&(ComponentType, String)> = match (id_to_component_type_name, waiter_err.caused_by_error().map(|err| err.journey()).flatten()) {
+        (Some(hm), Some(Journey { dst, .. })) => hm.get(&dst),
+        _ => None
     };
 
     let (src, dst) = match (waiter_src, motion_src, motion_dst) {
@@ -564,6 +567,26 @@ fn main() {
 
     let matches = get_clap_app().get_matches();
 
+    let (spy_send, spy_recv) = async_std::channel::bounded(8);
+
+    async fn consume_spy_recv(id_to_component_type_name: &Option<HashMap<usize, (ComponentType, String)>>, recv: async_std::channel::Receiver<SpyMessage>) {
+        loop {
+            match (id_to_component_type_name, recv.recv().await) {
+                (Some(hm), Ok(SpyMessage { src, dst: _ , src_port , msg } )) => {
+                    let human_src = hm.get(&src);
+                    println!(
+                        "SPY: MESSAGE: {:?}/{:?} - {:?}",
+                        human_src,
+                        src_port,
+                        msg
+                    );
+                },
+                (None, Ok(msg)) => { println!("SPY: NO ID TO COMPONENT TYPE & NAME MAPPING: {:?}", msg); },
+                (_, Err(_)) => { println!("SPY: END"); return; },
+            }
+        }
+    }
+
     let r = match process_user_config_action(get_user_config_action(&matches)) {
         Ok(UserResponse::Config(new_cfg)) => {
             serde_json::to_string(&new_cfg).map_err(|_x| vec!["Could not serialize new Config".to_string()])
@@ -571,10 +594,12 @@ fn main() {
         Ok(UserResponse::Process(process_config)) => {
             match get_waiter(process_config) {
                 Ok(mut waiter) => {
-                    async_std::task::block_on(waiter.start())
+                    let id_to_component_type_name = waiter.get_id_to_component_type_name();
+                    async_std::task::block_on(async_std::prelude::FutureExt::join(waiter.start(None /* Some(spy_send) */), consume_spy_recv(&id_to_component_type_name, spy_recv))).0
+                    // async_std::task::block_on(waiter.start(None))
                         .map_err(|errs| {
                             errs.into_iter().map(|err| {
-                                waiter_error_to_string(err, &waiter)
+                                waiter_error_to_string(err, &id_to_component_type_name)
                             }).collect::<Vec<String>>()
                         })
                         .map(|_processed_count| "".to_string())
