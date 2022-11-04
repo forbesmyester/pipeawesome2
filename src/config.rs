@@ -402,6 +402,7 @@ impl Config {
 
     }
 
+    /// Goes through and converts DeserializedConnection::JoinString to DeserializedConnection::Connections
     pub fn convert_connections(connections: &mut BTreeMap<String, DeserializedConnection>) -> HashSet<ConfigLintWarning> {
 
         connections.iter_mut()

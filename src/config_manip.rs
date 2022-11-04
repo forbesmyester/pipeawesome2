@@ -105,6 +105,7 @@ fn break_apart(input: Vec<Connection>) -> Vec<DeserializedConnection> {
 }
 
 
+/// Converts the connections so that each DeserializedConnection is only of 2 length
 pub fn rebuild_pair_up_connections_folder(mut acc: BTreeMap<String, DeserializedConnection>, (item_k, item_v): (String, DeserializedConnection)) -> BTreeMap<String, DeserializedConnection> {
     let mut existing_keys = acc.keys().map(|x| x.clone()).collect();
     match item_v {
@@ -286,6 +287,7 @@ fn get_multi_starts(mut acc: Vec<(ComponentType, String, OutputPort)>, (k, v): (
 }
 
 
+/// Launch (etc) only has one input, but in config it can have multiple. This will add a junction before it to handle discrepency
 pub fn add_junctions(connections: BTreeMap<String, DeserializedConnection>) -> BTreeMap<String, DeserializedConnection> {
 
     let (start_counts, end_counts) = count_start_ends(&connections);
