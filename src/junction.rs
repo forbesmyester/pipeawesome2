@@ -240,7 +240,7 @@ fn do_stuff() {
         let mut back_off = BackOff::new();
 
         assert_eq!(
-            junction.iteration(&mut back_off).await,
+            junction.iteration(&mut None, &mut back_off).await,
             Ok((false, 2))
         );
 
@@ -255,7 +255,7 @@ fn do_stuff() {
         );
 
         assert_eq!(
-            junction.iteration(&mut back_off).await,
+            junction.iteration(&mut None, &mut back_off).await,
             Ok((false, 2))
         );
         let output_1_result_1 = read_data(&mut output_1).await;
@@ -269,7 +269,7 @@ fn do_stuff() {
         );
 
         assert_eq!(
-            junction.iteration(&mut back_off).await,
+            junction.iteration(&mut None, &mut back_off).await,
             Ok((false, 1))
         );
         let output_1_result_2 = read_data(&mut output_1).await;
@@ -283,7 +283,7 @@ fn do_stuff() {
         chan_0_0_snd.close();
 
         assert_eq!(
-            junction.iteration(&mut back_off).await,
+            junction.iteration(&mut None, &mut back_off).await,
             Ok((false, 1))
         );
         let output_1_result_2 = read_data(&mut output_1).await;
@@ -294,7 +294,7 @@ fn do_stuff() {
         );
 
         assert_eq!(
-            junction.iteration(&mut back_off).await,
+            junction.iteration(&mut None, &mut back_off).await,
             Ok((false, 1))
         );
         let output_1_result_2 = read_data(&mut output_1).await;
@@ -307,7 +307,7 @@ fn do_stuff() {
         chan_0_1_snd.close();
         chan_1_0_snd.close();
         assert_eq!(
-            junction.iteration(&mut back_off).await,
+            junction.iteration(&mut None, &mut back_off).await,
             Ok((false, 1))
         );
         let output_1_result_2 = read_data(&mut output_1).await;
@@ -318,7 +318,7 @@ fn do_stuff() {
         );
 
         assert_eq!(
-            junction.iteration(&mut back_off).await,
+            junction.iteration(&mut None, &mut back_off).await,
             Ok((true, 1))
         );
 

@@ -17,3 +17,4 @@ pub mod connectable;
 pub mod config_manip;
 pub mod config_io;
 pub mod spy;
+pub mod bin_support;

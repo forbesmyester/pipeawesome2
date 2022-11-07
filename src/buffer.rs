@@ -239,7 +239,7 @@ fn do_stuff() {
         buffer.add_input(input, 0).unwrap();
         let output = buffer.add_output(OutputPort::Out, Breakable::Terminate, 0, 0).unwrap();
         let monitoring = buffer.add_buffer_size_monitor();
-        let buffer_motion = buffer.start();
+        let buffer_motion = buffer.start(None);
         match buffer_motion.join(read_data(output)).join(read_monitoring(monitoring)).await {
             ((Ok(proc_count), v), monitoring_msg) => {
                 assert_eq!(

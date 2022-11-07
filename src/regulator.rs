@@ -262,7 +262,7 @@ fn do_stuff() {
         tap.set_stdout_size(1);
         let output_1 = tap.add_output(OutputPort::Out, Breakable::Terminate, 0, 0).unwrap();
 
-        let w0 = tap.start_secret();
+        let w0 = tap.start_secret(None);
         let w1 = write_data_1(&mut input_chan_snd, &mut tapcontrol);
 
         for (index, vt) in read_data(output_1).join(w0.join(w1)).await.0.iter().enumerate() {

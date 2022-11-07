@@ -4,6 +4,7 @@ use crate::connectable::OutputPort;
 use std::time::Instant;
 use async_std::channel::{Receiver, RecvError, SendError, Sender, TryRecvError};
 use futures::AsyncRead;
+use serde::Serialize;
 use std::collections::VecDeque;
 use async_std::io as aio;
 use async_std::process as aip;
@@ -23,6 +24,34 @@ pub enum IODataWrapper {
    IOData(IOData),
    Finished,
    Skipped,
+}
+
+impl Serialize for IODataWrapper {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+
+            use serde::ser::SerializeMap;
+
+            match self {
+                IODataWrapper::IOData(IOData(v)) => {
+                    let mut m = serializer.serialize_map(Some(2))?;
+                    m.serialize_entry("status", "data")?;
+                    m.serialize_entry("data", v)?;
+                    m.end()
+                },
+                IODataWrapper::Finished => {
+                    let mut m = serializer.serialize_map(Some(1))?;
+                    m.serialize_entry("status", "finished")?;
+                    m.end()
+                },
+                IODataWrapper::Skipped => {
+                    let mut m = serializer.serialize_map(Some(1))?;
+                    m.serialize_entry("status", "skipped")?;
+                    m.end()
+                },
+            }
+    }
 }
 
 #[derive(Debug)]
@@ -568,6 +597,7 @@ fn test_motion_worker_output_closed_unbreakable() {
         monitor_written_data: Vec<MonitorMessage>,
         read: bool,
         finished: bool,
+        spy_read_items: Vec<SpyMessage>,
     }
 
     async fn test_motion_worker_output_closed_unbreakable() -> MotionResult<(TestMotionWorker, MotionResult<MotionWorkerResult>)> {
@@ -585,8 +615,8 @@ fn test_motion_worker_output_closed_unbreakable() {
 
         let mut motion_pull = Pull::Mock(PullJourney { src: 0, dst: 1 }, source_1);
         let mut motion_push = vec![
-            Push::Sender(Journey { src: 0, dst: 1, breakable: Breakable::Terminate }, output_send_1),
-            Push::Sender(Journey { src: 0, dst: 2, breakable: Breakable::Terminate }, output_send_2)
+            Push::Sender(Journey { src: 0, src_port: Some(OutputPort::Out), dst: 1, breakable: Breakable::Terminate }, output_send_1),
+            Push::Sender(Journey { src: 0, src_port: Some(OutputPort::Err), dst: 2, breakable: Breakable::Terminate }, output_send_2)
         ];
 
         let mut notifications = MotionNotifications {
@@ -594,7 +624,7 @@ fn test_motion_worker_output_closed_unbreakable() {
             written: Some(monitor_written_sender),
         };
 
-        let (mut spy_send, mut spy_recv) = bounded(8);
+        let (spy_send, spy_recv) = bounded(8);
 
         let r1 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, &mut Some(spy_send), false).await?;
 
@@ -612,6 +642,15 @@ fn test_motion_worker_output_closed_unbreakable() {
         monitor_read_data.push(montitor_read_receiver.recv().await.unwrap());
         monitor_written_data.push(montitor_written_receiver.recv().await.unwrap());
 
+        let mut spy_read_items = vec![];
+
+        loop {
+            match spy_recv.recv().await {
+                Ok(sm) => { spy_read_items.push(sm); }
+                _ => { break; }
+            }
+        }
+
 
         Ok(
             (
@@ -622,8 +661,9 @@ fn test_motion_worker_output_closed_unbreakable() {
                     monitor_written_data,
                     read: r1.read,
                     finished: r1.finished,
+                    spy_read_items,
                 },
-                motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, false).await
+                motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, &mut None, false).await
             )
         )
 
@@ -637,9 +677,9 @@ fn test_motion_worker_output_closed_unbreakable() {
     assert_eq!(r1.monitor_written_data, vec![MonitorMessage::Wrote(0)]);
     assert_eq!(r1.read, true);
     assert_eq!(r1.finished, false);
-    println!("{:?}", r2);
-    assert_eq!(r2.is_ok(), false);
+    assert_eq!(r1.spy_read_items, vec![SpyMessage { src: 0, dst: 1, src_port: OutputPort::Out, msg: IODataWrapper::IOData(IOData(vec![90])) }, SpyMessage { src: 0, dst: 2, src_port: OutputPort::Err, msg: IODataWrapper::IOData(IOData(vec![90])) }]);
 
+    assert_eq!(r2.is_ok(), false);
 }
 
 
@@ -663,8 +703,8 @@ fn test_motion_worker_output_closed_breakable() {
 
         let mut motion_pull = Pull::Mock(PullJourney { src: 0, dst: 1 }, source_1);
         let mut motion_push = vec![
-            Push::Sender(Journey { src: 0, dst: 1, breakable }, output_send_1),
-            Push::Sender(Journey { src: 0, dst: 2, breakable }, output_send_2)
+            Push::Sender(Journey { src: 0, src_port: None, dst: 1, breakable }, output_send_1),
+            Push::Sender(Journey { src: 0, src_port: None, dst: 2, breakable }, output_send_2)
         ];
 
         let mut notifications = MotionNotifications {
@@ -688,10 +728,10 @@ fn test_motion_worker_output_closed_breakable() {
         monitor_written_data.push(montitor_written_receiver.recv().await.unwrap());
 
         drop(pull_reader_5);
-        let r2 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, false).await?;
+        let r2 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, &mut None, false).await?;
         r_6.push(motion_read(&mut pull_reader_6, false).await.unwrap());
         drop(pull_reader_6);
-        let r3 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, true).await?;
+        let r3 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, &mut None, true).await?;
 
         Ok((r_5, r_6, r1, r2, r3))
 
@@ -738,8 +778,8 @@ fn test_motion_worker_skipped_input() {
         let (monitor_written_sender, montitor_written_receiver) = bounded(2);
 
         let mut motion_push = vec![
-            Push::Sender(Journey { src: 0, dst: 1, breakable: Breakable::Terminate }, output_send_1),
-            Push::Sender(Journey { src: 0, dst: 2, breakable: Breakable::Terminate }, output_send_2)
+            Push::Sender(Journey { src: 0, dst: 1, src_port: Some(OutputPort::Out), breakable: Breakable::Terminate }, output_send_1),
+            Push::Sender(Journey { src: 0, dst: 2, src_port: Some(OutputPort::Out), breakable: Breakable::Terminate }, output_send_2)
         ];
 
         let mut notifications = MotionNotifications {
@@ -747,7 +787,7 @@ fn test_motion_worker_skipped_input() {
             written: Some(monitor_written_sender),
         };
 
-        motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, false).await?;
+        motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, &mut None, false).await?;
 
         let mut pull_reader_5 = Pull::Receiver(PullJourney { src: 1, dst: 5 }, output_read_1);
         let mut pull_reader_6 = Pull::Receiver(PullJourney { src: 2, dst: 6 }, output_read_2);
@@ -764,7 +804,7 @@ fn test_motion_worker_skipped_input() {
         monitor_written_data.push(montitor_written_receiver.recv().await.unwrap());
 
 
-        let r2 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, true).await;
+        let r2 = motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, &mut None, true).await;
         drop(motion_pull_send);
 
         Ok(
@@ -776,7 +816,7 @@ fn test_motion_worker_skipped_input() {
                     monitor_written_data,
                 },
                 r2,
-                motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, None, true).await
+                motion_worker(&mut motion_pull, &mut notifications, &mut motion_push, &mut None, true).await
             )
         )
 

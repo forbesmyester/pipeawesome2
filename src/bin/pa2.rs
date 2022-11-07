@@ -1,10 +1,7 @@
+use pipeawesome2::bin_support::waiter_error_to_string;
 use pipeawesome2::config::quick_add_connection_set;
 use pipeawesome2::config_io::{ read_config, ConfigFormat };
-use pipeawesome2::config_manip::add_junctions;
-use pipeawesome2::waiter::Waiter;
-use pipeawesome2::waiter::WaiterError;
-use pipeawesome2::config::ComponentType;
-use pipeawesome2::motion::{Journey, SpyMessage};
+use pipeawesome2::config_manip::connection_manipulation;
 use pipeawesome2::graph;
 use pipeawesome2::waiter::get_waiter;
 use pipeawesome2::config::Connection;
@@ -12,10 +9,8 @@ use pipeawesome2::config::ConfigLintWarning;
 use pipeawesome2::config::DeserializedConnection;
 use pipeawesome2::config::load_connection_from_string;
 use pipeawesome2::config::Config;
-use pipeawesome2::config_manip::rebuild_pair_up_connections_folder;
 use clap::ArgMatches;
 use clap::SubCommand;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use clap::{ App, Arg };
 
@@ -508,12 +503,7 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
             return Err(format!("We found the following warnings / errors: \n\n * {}\n", errs.join("\n * ")));
         },
         Ok(UserRequest::Process { config_in, config_format }) => {
-            let mut config = read_config(&config_format, &config_in)?;
-            let mut read_config_connections = std::mem::take(&mut config.connection);
-            Config::convert_connections(&mut read_config_connections);
-            let paired_config_connections = read_config_connections.into_iter().fold(BTreeMap::new(), rebuild_pair_up_connections_folder);
-            let mut manipulated_connections = add_junctions(paired_config_connections);
-            std::mem::swap(&mut config.connection, &mut manipulated_connections);
+            let mut config = connection_manipulation(read_config(&config_format, &config_in)?);
 
             let errs = Config::lint(&mut config).into_iter()
                 .filter(|lint_err| !matches!(lint_err, ConfigLintWarning::InConfigButMissingFlowConnection { .. }))
@@ -537,55 +527,9 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
 
 }
 
-fn waiter_error_to_string(waiter_err: WaiterError, id_to_component_type_name: &Option<HashMap<usize, (ComponentType, String)>>) -> String {
-
-    fn component_type_name_to_string(ct: &ComponentType, n: &str) -> String {
-        format!("{}:{}", ct, n)
-    }
-
-    let waiter_src: Option<(&ComponentType, &String)> = waiter_err.caused_by_error_source();
-    let motion_src: Option<&(ComponentType, String)> = match (id_to_component_type_name, waiter_err.caused_by_error().map(|err| err.journey_source()).flatten()) {
-        (Some(hm), Some(journey_source)) => hm.get(journey_source),
-        _ => None
-    };
-    let motion_dst: Option<&(ComponentType, String)> = match (id_to_component_type_name, waiter_err.caused_by_error().map(|err| err.journey()).flatten()) {
-        (Some(hm), Some(Journey { dst, .. })) => hm.get(&dst),
-        _ => None
-    };
-
-    let (src, dst) = match (waiter_src, motion_src, motion_dst) {
-        (_, Some(motion_src), Some(motion_dst)) => (component_type_name_to_string(&motion_src.0, &motion_src.1), component_type_name_to_string(&motion_dst.0, &motion_dst.1)),
-        (_, Some(motion_src), _) => (component_type_name_to_string(&motion_src.0, &motion_src.1), "Unknown Destination".to_string()),
-        (Some(waiter_src), _, _) => (component_type_name_to_string(waiter_src.0, waiter_src.1), "Unknown Destination".to_string()),
-        _ => ("Unknown Source".to_string(), "Unknown Destination".to_string()),
-    };
-
-    format!("{} | {} - {:?}", src, dst, waiter_err.description())
-}
-
 fn main() {
 
     let matches = get_clap_app().get_matches();
-
-    let (spy_send, spy_recv) = async_std::channel::bounded(8);
-
-    async fn consume_spy_recv(id_to_component_type_name: &Option<HashMap<usize, (ComponentType, String)>>, recv: async_std::channel::Receiver<SpyMessage>) {
-        loop {
-            match (id_to_component_type_name, recv.recv().await) {
-                (Some(hm), Ok(SpyMessage { src, dst: _ , src_port , msg } )) => {
-                    let human_src = hm.get(&src);
-                    println!(
-                        "SPY: MESSAGE: {:?}/{:?} - {:?}",
-                        human_src,
-                        src_port,
-                        msg
-                    );
-                },
-                (None, Ok(msg)) => { println!("SPY: NO ID TO COMPONENT TYPE & NAME MAPPING: {:?}", msg); },
-                (_, Err(_)) => { println!("SPY: END"); return; },
-            }
-        }
-    }
 
     let r = match process_user_config_action(get_user_config_action(&matches)) {
         Ok(UserResponse::Config(new_cfg)) => {
@@ -594,9 +538,8 @@ fn main() {
         Ok(UserResponse::Process(process_config)) => {
             match get_waiter(process_config) {
                 Ok(mut waiter) => {
-                    let id_to_component_type_name = waiter.get_id_to_component_type_name();
-                    async_std::task::block_on(async_std::prelude::FutureExt::join(waiter.start(None /* Some(spy_send) */), consume_spy_recv(&id_to_component_type_name, spy_recv))).0
-                    // async_std::task::block_on(waiter.start(None))
+                    let id_to_component_type_name = waiter.get_id_to_component_type_name().ok_or("Could not get_id_to_component_type_name").unwrap();
+                    async_std::task::block_on(waiter.start(None))
                         .map_err(|errs| {
                             errs.into_iter().map(|err| {
                                 waiter_error_to_string(err, &id_to_component_type_name)
