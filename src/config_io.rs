@@ -23,7 +23,7 @@ fn read_config_as_str(config_in: &str) -> Result<String, String> {
 }
 
 
-fn parse_config_str(fmt: &ConfigFormat, config_str: &str) -> Result<Config, String> {
+pub fn parse_config_str(fmt: &ConfigFormat, config_str: &str) -> Result<Config, String> {
     match fmt {
         ConfigFormat::Json => serde_json::from_str::<Config>(config_str).map_err(|e| format!("Could not parse config ({})", e)),
         ConfigFormat::Yaml => serde_yaml::from_str::<Config>(config_str).map_err(|e| format!("Could not parse config ({})", e)),

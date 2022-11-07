@@ -4,6 +4,7 @@ use crate::connectable::OutputPort;
 use std::time::Instant;
 use async_std::channel::{Receiver, RecvError, SendError, Sender, TryRecvError};
 use futures::AsyncRead;
+use serde::Serialize;
 use std::collections::VecDeque;
 use async_std::io as aio;
 use async_std::process as aip;
@@ -23,6 +24,34 @@ pub enum IODataWrapper {
    IOData(IOData),
    Finished,
    Skipped,
+}
+
+impl Serialize for IODataWrapper {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+
+            use serde::ser::SerializeMap;
+
+            match self {
+                IODataWrapper::IOData(IOData(v)) => {
+                    let mut m = serializer.serialize_map(Some(2))?;
+                    m.serialize_entry("status", "data")?;
+                    m.serialize_entry("data", v)?;
+                    m.end()
+                },
+                IODataWrapper::Finished => {
+                    let mut m = serializer.serialize_map(Some(1))?;
+                    m.serialize_entry("status", "finished")?;
+                    m.end()
+                },
+                IODataWrapper::Skipped => {
+                    let mut m = serializer.serialize_map(Some(1))?;
+                    m.serialize_entry("status", "skipped")?;
+                    m.end()
+                },
+            }
+    }
 }
 
 #[derive(Debug)]

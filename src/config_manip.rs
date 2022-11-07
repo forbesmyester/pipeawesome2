@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::collections::HashMap;
 
 use crate::config::ComponentType;
+use crate::config::Config;
 use crate::config::Connection;
 use crate::config::DeserializedConnection;
 use crate::connectable::Breakable;
@@ -540,4 +541,21 @@ fn test_add_junctions() {
     assert_eq!(add_junctions(input), expected);
 
 
+}
+
+pub fn connection_manipulation(mut config: Config) -> Config {
+    let mut read_config_connections = std::mem::take(&mut config.connection);
+    Config::convert_connections(&mut read_config_connections);
+    let paired_config_connections = read_config_connections.into_iter().fold(BTreeMap::new(), rebuild_pair_up_connections_folder);
+    let mut manipulated_connections = add_junctions(paired_config_connections);
+    std::mem::swap(&mut config.connection, &mut manipulated_connections);
+    config
+}
+
+pub fn connection_manipulation_light(mut config: Config) -> Config {
+    let mut read_config_connections = std::mem::take(&mut config.connection);
+    Config::convert_connections(&mut read_config_connections);
+    let mut paired_config_connections = read_config_connections.into_iter().fold(BTreeMap::new(), rebuild_pair_up_connections_folder);
+    std::mem::swap(&mut config.connection, &mut paired_config_connections);
+    config
 }
