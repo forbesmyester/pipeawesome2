@@ -1,3 +1,4 @@
+use crate::motion::IODataWrapper;
 // use pipeawesome2::motion::{Pull, MotionResult, IOData};
 use crate::motion::PullJourney;
 use crate::motion::SpyMessage;
@@ -225,7 +226,7 @@ impl <E: IntoIterator<Item = (K, V)>,
             }
         };
 
-        let r3 = motion(stderr_pull, MotionNotifications::empty(), spy, stderr_push);
+        let r3 = motion(stderr_pull, MotionNotifications::empty(), spy.clone(), stderr_push);
 
         let r_out_prep: ((MotionResult<usize>, MotionResult<usize>), MotionResult<usize>) = r_input.join(r2).join(r3).await;
 
@@ -244,7 +245,11 @@ impl <E: IntoIterator<Item = (K, V)>,
                 };
                 match msg {
                     Some(m) => {
-                        exit_status_tx.send(m).await.map_err(|e| MotionError::SendError(*journey, Instant::now(), e))?;
+                        exit_status_tx.send(m.clone()).await.map_err(|e| MotionError::SendError(*journey, Instant::now(), e))?;
+                        if let (Some(spy), src, dst, Some(src_port)) = (spy, journey.src, journey.dst, journey.src_port) {
+                            let spy_msg = SpyMessage { src, msg: IODataWrapper::IOData(m), dst, src_port };
+                            spy.send(spy_msg).await.map_err(|e| MotionError::SpyWriteError(Instant::now(), e))?;
+                        }
                         exit_status_tx.close();
                         break;
                     },
