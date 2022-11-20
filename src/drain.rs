@@ -63,6 +63,7 @@ impl StartableControl for Drain {
         if let Some(pull) = std::mem::take(&mut self.stdin) {
 
             let push = match (pull.journey(), std::mem::take(&mut self.write_location)) {
+                (Some(PullJourney { .. }), Some(f)) if f == "/dev/null" => Push::None,
                 (Some(PullJourney { src, dst }), Some(f)) if f == "-" => Push::Stdout(Journey { src: *src, src_port: None, dst: *dst, breakable: Breakable::Terminate }, async_std::io::stdout()),
                 (Some(PullJourney { src, dst }), Some(f)) if f == "_" => Push::Stderr(Journey { src: *src, src_port: None, dst: *dst, breakable: Breakable::Terminate }, async_std::io::stderr()),
                 (Some(PullJourney { src, dst }), Some(filename)) => {
