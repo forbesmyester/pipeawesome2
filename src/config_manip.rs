@@ -6,9 +6,11 @@ use crate::config::ComponentType;
 use crate::config::Config;
 use crate::config::Connection;
 use crate::config::DeserializedConnection;
+use crate::config::DrainConfig;
 use crate::connectable::Breakable;
 use crate::connectable::InputPort;
 use crate::connectable::OutputPort;
+use crate::drain::Drain;
 
 
 fn generate_new_key(original_key: &str, existing_keys: &HashSet<String>) -> String {
@@ -543,12 +545,259 @@ fn test_add_junctions() {
 
 }
 
+
+fn identify_required_spies_for_launch_exits(connections: &BTreeMap<String, DeserializedConnection>) -> HashSet<String> {
+
+    let connection_pairs: Vec<(Connection, Connection)> = connections.values().filter_map(|dsc| {
+        match dsc {
+            DeserializedConnection::Connections(v) if v.len() != 2 => {
+                None
+            },
+            DeserializedConnection::Connections(v) => {
+                Some((v[0].clone(), v[1].clone()))
+            },
+            _ => None,
+        }
+    }).collect();
+
+    let launch_has_exit_already: HashSet<String> = connection_pairs.iter().filter_map(|(first, _)| {
+        match first {
+            Connection::StartConnection { component_type, component_name, output_port, .. }
+                if (component_type == &ComponentType::Launch) && (output_port == &OutputPort::Exit) => {
+                    Some(component_name.clone())
+                },
+            _ => None,
+        }
+    }).collect();
+
+    let all_launch = connection_pairs.into_iter().fold(HashSet::new(), |mut acc, (first, _last)| {
+        match first {
+            Connection::StartConnection { component_type, component_name, .. }
+                if component_type == ComponentType::Launch => {
+                    acc.insert(component_name.clone());
+                    acc
+                },
+            _ => acc,
+        }
+    });
+
+    all_launch.into_iter().filter_map(|name| {
+        match launch_has_exit_already.contains(&name) {
+            true => None,
+            false => Some(name)
+        }
+    }).collect()
+
+}
+
+
+
+#[test]
+fn test_identify_required_spies_for_launch_exits() {
+
+    use std::iter::FromIterator;
+    use crate::connectable::InputPort;
+    use crate::connectable::Breakable;
+
+    let input: BTreeMap<String, DeserializedConnection> = BTreeMap::<_, _>::from_iter([
+        (
+            "dyn_connection_1".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_1".to_string(), input_port: InputPort { breakable: Breakable::Finish, priority: 3 }, connection_set: None },
+            ]),
+        ),
+        (
+            "main_2".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "ynbhz_1".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, connection_set: None },
+
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "ynbhz_2".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Exit, connection_set: None },
+
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "ynbhz_3".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_3".to_string(), output_port: OutputPort::Out, connection_set: None },
+
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_3".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+    ]);
+
+    let expected: HashSet<String> = HashSet::from_iter(vec!["command_1".to_owned(), "command_3".to_owned()]);
+
+    assert_eq!(
+        identify_required_spies_for_launch_exits(&input),
+        expected
+    );
+
+}
+
+fn add_launch_exit_spies(config: &mut Config, to_add: Vec<String>) {
+
+    let mut existing_connection_keys = config.connection.keys().map(|x| x.clone()).collect();
+    let mut existing_drains = config.drain.keys().map(|x| x.clone()).collect();
+    println!("{:?}", existing_drains);
+
+    for launch_name in to_add {
+        let new_drain_key = generate_new_key("dyn_drain", &existing_drains);
+        existing_drains.insert(new_drain_key.clone());
+        let new_connection_key = generate_new_key("dyn_connection", &existing_connection_keys);
+        existing_connection_keys.insert(new_connection_key.clone());
+        config.drain.insert(new_drain_key.clone(), crate::config::DrainConfig { destination: "/dev/null".to_owned() });
+        config.connection.insert(new_connection_key, DeserializedConnection::Connections(vec![
+            Connection::StartConnection { component_type: ComponentType::Launch, component_name: launch_name.to_owned(), output_port: OutputPort::Exit, connection_set: None },
+
+            Connection::EndConnection { component_type: ComponentType::Drain, component_name: new_drain_key, input_port: InputPort { breakable: Breakable::Terminate, priority: 0 }, connection_set: None }
+        ]));
+    }
+}
+
+
+#[test]
+fn test_add_launch_exit_spies() {
+
+    use std::iter::FromIterator;
+    use crate::connectable::InputPort;
+    use crate::connectable::Breakable;
+
+    let input_connections: BTreeMap<String, DeserializedConnection> = BTreeMap::<_, _>::from_iter([
+        (
+            "dyn_connection_1".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_1".to_string(), input_port: InputPort { breakable: Breakable::Finish, priority: 3 }, connection_set: None },
+            ]),
+        ),
+        (
+            "main_2".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "ynbhz_1".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, connection_set: None },
+
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "ynbhz_2".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Exit, connection_set: None },
+
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "ynbhz_3".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_3".to_string(), output_port: OutputPort::Out, connection_set: None },
+
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_3".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+    ]);
+
+    let expected_connections: BTreeMap<String, DeserializedConnection> = BTreeMap::<_, _>::from_iter([
+        (
+            "dyn_connection_1".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Faucet, component_name: "tap".to_string(), output_port: OutputPort::Out, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_1".to_string(), input_port: InputPort { breakable: Breakable::Finish, priority: 3 }, connection_set: None },
+            ]),
+        ),
+        (
+            "main_2".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Out, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "ynbhz_1".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Out, connection_set: None },
+
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "ynbhz_2".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_2".to_string(), output_port: OutputPort::Exit, connection_set: None },
+
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "ynbhz_3".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_3".to_string(), output_port: OutputPort::Out, connection_set: None },
+
+                Connection::EndConnection { component_type: ComponentType::Junction, component_name: "junction_3".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 3 }, connection_set: None }
+            ])
+        ),
+        (
+            "dyn_connection_2".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_1".to_string(), output_port: OutputPort::Exit, connection_set: None },
+                Connection::EndConnection { component_type: ComponentType::Drain, component_name: "dyn_drain_2".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 0 }, connection_set: None }
+            ])
+        ),
+        (
+            "dyn_connection_3".to_string(),
+            DeserializedConnection::Connections(vec![
+                Connection::StartConnection { component_type: ComponentType::Launch, component_name: "command_3".to_string(), output_port: OutputPort::Exit, connection_set: None },
+
+                Connection::EndConnection { component_type: ComponentType::Drain, component_name: "dyn_drain_3".to_string(), input_port: InputPort { breakable: Breakable::Terminate, priority: 0 }, connection_set: None }
+            ])
+        ),
+    ]);
+
+    let mut config = Config::new();
+    config.connection = input_connections;
+    config.drain.insert("dyn_drain_1".to_owned(), DrainConfig { destination: "/dev/null".to_owned() });
+
+    let resulting_config = add_launch_exit_spies(&mut config, vec!["command_1".to_owned(), "command_3".to_owned()]);
+
+    assert_eq!(config.connection, expected_connections);
+    assert_eq!(
+        config.drain.keys().collect::<HashSet<&String>>(),
+        HashSet::from_iter(vec![&"dyn_drain_1".to_owned(), &"dyn_drain_2".to_owned(), &"dyn_drain_3".to_owned()])
+    );
+
+}
+
+
+
 pub fn connection_manipulation(mut config: Config) -> Config {
     let mut read_config_connections = std::mem::take(&mut config.connection);
     Config::convert_connections(&mut read_config_connections);
     let paired_config_connections = read_config_connections.into_iter().fold(BTreeMap::new(), rebuild_pair_up_connections_folder);
     let mut manipulated_connections = add_junctions(paired_config_connections);
+    let launch_missing_exit_spies = identify_required_spies_for_launch_exits(&manipulated_connections).into_iter().collect();
     std::mem::swap(&mut config.connection, &mut manipulated_connections);
+    add_launch_exit_spies(&mut config, launch_missing_exit_spies);
     config
 }
 
