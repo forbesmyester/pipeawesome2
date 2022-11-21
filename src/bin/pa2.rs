@@ -1,7 +1,7 @@
 use pipeawesome2::bin_support::waiter_error_to_string;
 use pipeawesome2::config::quick_add_connection_set;
 use pipeawesome2::config_io::{ read_config, ConfigFormat };
-use pipeawesome2::config_manip::connection_manipulation;
+use pipeawesome2::config_manip::{connection_manipulation, connection_manipulation_light};
 use pipeawesome2::graph;
 use pipeawesome2::waiter::get_waiter;
 use pipeawesome2::config::Connection;
@@ -84,6 +84,10 @@ fn get_clap_app() -> App<'static, 'static> {
 
                 .subcommand(
                     SubCommand::with_name("lint")
+                )
+
+                .subcommand(
+                    SubCommand::with_name("manipulate")
                 )
 
                 .subcommand(
@@ -201,6 +205,7 @@ enum UserRequest {
         join: String,
     },
     ConfigLintShow { config_in: String, config_format: ConfigFormat },
+    Manipulate { config_in: String, config_format: ConfigFormat },
     Process { config_in: String, config_format: ConfigFormat },
     Graph {
         config_in: String,
@@ -344,6 +349,9 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
             },
             (_, ["config", "lint"]) => {
                 Ok(UserRequest::ConfigLintShow { config_format: get_config_format(first_sub_command)?, config_in: get_config_in(first_sub_command) })
+            },
+            (_, ["config", "manipulate"]) => {
+                Ok(UserRequest::Manipulate { config_format: get_config_format(first_sub_command)?, config_in: get_config_in(first_sub_command) })
             },
             (Ok(base_options), ["config", "connection", "join"]) => {
                 last_sub_command
@@ -501,6 +509,10 @@ fn process_user_config_action(result_config: Result<UserRequest, String>) -> Res
                 return Ok(config).map(UserResponse::Config)
             }
             return Err(format!("We found the following warnings / errors: \n\n * {}\n", errs.join("\n * ")));
+        },
+        Ok(UserRequest::Manipulate { config_in, config_format }) => {
+            let config = read_config(&config_format, &config_in)?;
+            Ok(connection_manipulation_light(config)).map(UserResponse::Config)
         },
         Ok(UserRequest::Process { config_in, config_format }) => {
             let mut config = connection_manipulation(read_config(&config_format, &config_in)?);
