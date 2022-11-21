@@ -442,11 +442,13 @@ impl Config {
                 "faucet" => ComponentType::Faucet,
                 "launch" => ComponentType::Launch,
                 "drain" => ComponentType::Drain,
+                "regulator" => ComponentType::Regulator,
                 _ => panic!("Encountered known reg_key in in Config::lint()"),
             }
         }
 
         let registered: HashMap<String, Vec<String>> = HashMap::<_, _>::from_iter([
+            ("regulator".to_string(), config.regulator.iter().map(|x| x.0.to_string()).collect::<Vec<String>>()), // recommended (control of buffers)
             ("drain".to_string(), config.drain.iter().map(|x| x.0.to_string()).collect::<Vec<String>>()), // recommended (where to output)
             ("faucet".to_string(), config.faucet.iter().map(|x| x.0.to_string()).collect::<Vec<String>>()), // optional (min/max buffered)
             ("launch".to_string(), config.launch.iter().map(|x| x.0.to_string()).collect::<Vec<String>>()), // required (how to launch the programs)
@@ -539,6 +541,9 @@ impl Config {
                     },
                     ComponentType::Launch => {
                         exists_with_flow_config(&registered, "launch", *component_name)
+                    },
+                    ComponentType::Regulator => {
+                        exists_with_flow_config(&registered, "regulator", *component_name)
                     },
                     _ => false,
                 };
@@ -938,7 +943,7 @@ fn test_load_connection_from_string() {
 
 
 #[test]
-fn test_lint() {
+fn test_lint_1() {
 
     use std::iter::FromIterator;
     let config_string = r#"{
@@ -958,7 +963,7 @@ fn test_lint() {
         "exit_filter_adult": { "cmd": "awk", "path": null, "env": {}, "arg": [" { print \"EXIT: filter_adult: \" $0 }"] }
       },
       "connection": {
-        "main": "f:tap | b:buff | j:split | l:filter_adult | l:mark_adult | j:join | d:hole"
+        "main": "f:tap | b:buff | r:reg | j:split | l:filter_adult | l:mark_adult | j:join | d:hole"
       }
     }"#;
 
@@ -968,6 +973,33 @@ fn test_lint() {
             ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "drain".to_string(), component_type: ComponentType::Drain, component_name: "plug".to_string() },
             ConfigLintWarning::InConfigButMissingFlowConnection { config_section: "launch".to_string(), component_type: ComponentType::Launch, component_name: "exit_filter_adult".to_string() },
             ConfigLintWarning::RegulatorWatchingMissingBuffer { config_section: "regulator[\"reg\"].monitored_buffers".to_string(), component_type: ComponentType::Buffer, component_name: "zzz".to_string() },
+        ]),
+        Config::lint(&mut config)
+    );
+
+}
+
+
+#[test]
+fn test_lint_2() {
+
+    use std::iter::FromIterator;
+    let config_string = r#"{
+      "faucet": {
+        "tap": { "source": "res/test/simple_input.txt" }
+      },
+      "drain": {
+        "hole": { "destination": "-" }
+      },
+      "connection": {
+        "main": "f:tap | r:reg | d:hole"
+      }
+    }"#;
+
+    let mut config = serde_json::from_str::<Config>(config_string).unwrap();
+    assert_eq!(
+        HashSet::<_>::from_iter([
+            ConfigLintWarning::InFlowConnectionButMissingConfig { component_type: ComponentType::Regulator, component_name: "reg".to_string() },
         ]),
         Config::lint(&mut config)
     );

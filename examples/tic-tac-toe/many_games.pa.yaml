@@ -7,7 +7,7 @@ connection:
 drain:
   output: { destination: '-' }
 regulator:
-  reg:
+  regulate_flow:
     buffered: [10, 100]
     monitored_buffers: [ "reprocess" ]
 launch:
