@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::str::FromStr;
 use crate::connectable::InputPort;
 use std::collections::HashSet;
 use std::collections::HashMap;
@@ -17,6 +18,41 @@ pub enum ComponentType {
     Buffer,
     Drain,
     Regulator,
+}
+
+#[derive(Debug)]
+pub enum ParseComponentTypeErr {
+    UnknownStr(String)
+}
+
+impl FromStr for ComponentType {
+    type Err = ParseComponentTypeErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "faucet" => Ok(ComponentType::Faucet),
+            "launch" => Ok(ComponentType::Launch),
+            "drain" => Ok(ComponentType::Drain),
+            "regulator" => Ok(ComponentType::Regulator),
+            "buffer" => Ok(ComponentType::Buffer),
+            "junction" => Ok(ComponentType::Junction),
+
+            "Faucet" => Ok(ComponentType::Faucet),
+            "Launch" => Ok(ComponentType::Launch),
+            "Drain" => Ok(ComponentType::Drain),
+            "Regulator" => Ok(ComponentType::Regulator),
+            "Buffer" => Ok(ComponentType::Buffer),
+            "Junction" => Ok(ComponentType::Junction),
+
+            "FAUCET" => Ok(ComponentType::Faucet),
+            "LAUNCH" => Ok(ComponentType::Launch),
+            "DRAIN" => Ok(ComponentType::Drain),
+            "REGULATOR" => Ok(ComponentType::Regulator),
+            "BUFFER" => Ok(ComponentType::Buffer),
+            "JUNCTION" => Ok(ComponentType::Junction),
+            _ => Err(ParseComponentTypeErr::UnknownStr(s.to_string())),
+        }
+    }
 }
 
 
@@ -438,11 +474,11 @@ impl Config {
         }
 
         fn string_to_component_type(s: &str) -> ComponentType {
-            match s {
-                "faucet" => ComponentType::Faucet,
-                "launch" => ComponentType::Launch,
-                "drain" => ComponentType::Drain,
-                "regulator" => ComponentType::Regulator,
+            match ComponentType::from_str(s) {
+                Ok(ComponentType::Faucet) => ComponentType::Faucet,
+                Ok(ComponentType::Launch) => ComponentType::Launch,
+                Ok(ComponentType::Drain) => ComponentType::Drain,
+                Ok(ComponentType::Regulator) => ComponentType::Regulator,
                 _ => panic!("Encountered known reg_key in in Config::lint()"),
             }
         }

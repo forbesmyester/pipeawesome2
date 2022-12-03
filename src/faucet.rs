@@ -87,7 +87,6 @@ impl Connectable for Faucet {
 impl StartableControl for Faucet {
 
     async fn start(&mut self, spy: Option<Sender<SpyMessage>>) -> MotionResult<usize> {
-
         let read_location = std::mem::take(&mut self.read_location);
         self.stdin = Some(match (self.pull_journey, read_location) {
             (Some(journey), Some(f)) if f == "-" => Pull::Stdin(journey, async_std::io::stdin(), ReadSplitControl::new()),

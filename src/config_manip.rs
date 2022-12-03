@@ -6,11 +6,9 @@ use crate::config::ComponentType;
 use crate::config::Config;
 use crate::config::Connection;
 use crate::config::DeserializedConnection;
-use crate::config::DrainConfig;
 use crate::connectable::Breakable;
 use crate::connectable::InputPort;
 use crate::connectable::OutputPort;
-use crate::drain::Drain;
 
 
 fn generate_new_key(original_key: &str, existing_keys: &HashSet<String>) -> String {

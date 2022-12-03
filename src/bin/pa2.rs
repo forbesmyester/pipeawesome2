@@ -321,7 +321,6 @@ fn get_user_config_action(matches: &ArgMatches) -> Result<UserRequest, String> {
         let coll_subcomm_str: Vec<&str> = collected_subcommands.subcommands.iter().map(|x| x.1).collect();
         let last_sub_command: Option<&ArgMatches> = collected_subcommands.subcommands.iter().map(|x| x.0).last();
 
-
         match (base_options, &coll_subcomm_str[..]) {
             (_, []) => {
                 eprintln!("Run with --help for assistance");
